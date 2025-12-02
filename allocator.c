@@ -51,12 +51,71 @@ typedef struct {
 } BlockFooter;
 
 
-static uint8_t* heap_start = NULL;
-static uint8_t* heap_end = NULL;
+static uint8_t* s_heap = NULL;
+static size_t s_heap_size = NULL;
 
 
 SIZE_T align_up(SIZE_T x, SIZE_T align) {
     SIZE_T r = x % align;
     if (r == 0) return x;
     return x + (align - r);
+}
+
+
+SIZE_T calculate_minimum_heap_size() {
+    SIZE_T headers_sum = sizeof(GlobalHeader) + sizeof(BlockHeader) + sizeof(JournalEntry);
+    SIZE_T min_payload_start = align_up(headers_sum, ALIGN);
+    return min_payload_start + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
+}
+
+
+int mm_init(uint8_t *heap, size_t heap_size) {
+    if (heap == NULL || heap_size < calculate_minimum_heap_size()) {
+        return -1;
+    }
+
+    s_heap = heap;
+    s_heap_size = heap_size;
+
+    uint8_t unused_pattern[5];
+    memcpy(unused_pattern, heap, 5);
+
+    // Initialize Global Header
+
+    GlobalHeader *global_header = (GlobalHeader *)heap;
+    memset(global_header, 0, sizeof(GlobalHeader));
+
+    global_header->magic = GLOBAL_HEADER_MAGIC;
+    global_header->heap_size = (SIZE_T)heap_size;
+    global_header->free_list_head = sizeof(GlobalHeader);
+    global_header->quarantine_list_head = 0;
+    memcpy(global_header->unused_pattern, unused_pattern, 5);
+    
+    size_t data_length = offsetof(GlobalHeader, checksum);
+    global_header->checksum = crc32((const void *)global_header, data_length);
+
+    // Initialize the first Block Header
+
+    BlockHeader *block_header = (BlockHeader *)(heap + sizeof(GlobalHeader));
+    memset(block_header, 0, sizeof(BlockHeader));
+
+    block_header->magic = BLOCK_HEADER_MAGIC;
+    block_header->block_size = (SIZE_T)(heap_size - sizeof(GlobalHeader));
+    block_header->flags = BLOCK_FREE; // Mark as free
+    block_header->prev_free_offset = 0;
+    block_header->next_free_offset = 0;
+    data_length = offsetof(BlockHeader, header_checksum);
+    block_header->header_checksum = crc32((const void *)block_header, data_length);
+    block_header->payload_checksum = 0;
+
+    // Initialize the Block Footer
+    BlockFooter *block_footer = (BlockFooter *)(heap + heap_size - sizeof(BlockFooter));
+    memset(block_footer, 0, sizeof(BlockFooter));
+
+    block_footer->block_size = block_header->block_size;
+    block_footer->flags = BLOCK_FREE; // Mark as free
+    data_length = offsetof(BlockFooter, footer_checksum);
+    block_footer->footer_checksum = crc32((const void *)block_footer, data_length);
+
+    return 0;
 }
