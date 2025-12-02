@@ -33,6 +33,7 @@ struct BlockHeader {
     OFFSET_T prev_free_offset;
     OFFSET_T next_free_offset;
     CHECKSUM_T header_checksum;
+    CHECKSUM_T payload_checksum;
 };
 
 struct JournalEntry {
