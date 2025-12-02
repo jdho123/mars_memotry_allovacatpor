@@ -48,3 +48,10 @@ struct BlockFooter {
     uint8_t flags;
     CHECKSUM_T footer_checksum;
 };
+
+
+SIZE_T align_up(SIZE_T x, SIZE_T align) {
+    SIZE_T r = x % align;
+    if (r == 0) return x;
+    return x + (align - r);
+}
