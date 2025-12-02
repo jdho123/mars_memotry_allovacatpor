@@ -17,16 +17,16 @@ typedef uint32_t CHECKSUM_T;
 #define BLOCK_ALLOCATED (uint8_t)0x02
 #define BLOCK_QUARANTINE (uint8_t)0x04
 
-struct GlobalHeader {
+typedef struct {
     uint32_t magic;
     SIZE_T heap_size;
     OFFSET_T free_list_head;
     OFFSET_T quarantine_list_head;
     uint8_t unused_pattern[5];
     CHECKSUM_T checksum;
-};
+} GlobalHeader;
 
-struct BlockHeader {
+typedef struct {
     uint32_t magic;
     SIZE_T block_size;
     uint8_t flags;
@@ -34,21 +34,21 @@ struct BlockHeader {
     OFFSET_T next_free_offset;
     CHECKSUM_T header_checksum;
     CHECKSUM_T payload_checksum;
-};
+} BlockHeader;
 
-struct JournalEntry {
+typedef struct {
     OFFSET_T block_offset;
     SIZE_T old_payload_size;
     SIZE_T new_payload_size;
     uint8_t valid;
     CHECKSUM_T entry_checksum;
-};
+} JournalEntry;
 
-struct BlockFooter {
+typedef struct {
     SIZE_T block_size;
     uint8_t flags;
     CHECKSUM_T footer_checksum;
-};
+} BlockFooter;
 
 
 static uint8_t* heap_start = NULL;
