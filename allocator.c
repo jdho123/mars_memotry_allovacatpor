@@ -50,6 +50,10 @@ struct BlockFooter {
 };
 
 
+static uint8_t* heap_start = NULL;
+static uint8_t* heap_end = NULL;
+
+
 SIZE_T align_up(SIZE_T x, SIZE_T align) {
     SIZE_T r = x % align;
     if (r == 0) return x;
