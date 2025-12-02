@@ -52,7 +52,7 @@ typedef struct {
 
 
 static uint8_t* s_heap = NULL;
-static size_t s_heap_size = NULL;
+static size_t s_heap_size = 0;
 
 
 SIZE_T align_up(SIZE_T x, SIZE_T align) {
