@@ -18,8 +18,6 @@ typedef uint32_t CHECKSUM_T;
 #define BLOCK_QUARANTINE (uint8_t)0x04
 
 typedef struct {
-    uint32_t magic;
-    SIZE_T heap_size;
     OFFSET_T free_list_head;
     OFFSET_T quarantine_list_head;
     uint8_t unused_pattern[5];
@@ -27,7 +25,6 @@ typedef struct {
 } GlobalHeader;
 
 typedef struct {
-    uint32_t magic;
     SIZE_T block_size;
     uint8_t flags;
     OFFSET_T prev_free_offset;
@@ -38,8 +35,7 @@ typedef struct {
 
 typedef struct {
     OFFSET_T block_offset;
-    SIZE_T old_payload_size;
-    SIZE_T new_payload_size;
+    SIZE_T old_val;
     uint8_t valid;
     CHECKSUM_T entry_checksum;
 } JournalEntry;
@@ -85,28 +81,34 @@ int mm_init(uint8_t *heap, size_t heap_size) {
     GlobalHeader *global_header = (GlobalHeader *)heap;
     memset(global_header, 0, sizeof(GlobalHeader));
 
-    global_header->magic = GLOBAL_HEADER_MAGIC;
-    global_header->heap_size = (SIZE_T)heap_size;
-    global_header->free_list_head = sizeof(GlobalHeader);
+    global_header->free_list_head = sizeof(GlobalHeader) * 2;
     global_header->quarantine_list_head = 0;
     memcpy(global_header->unused_pattern, unused_pattern, 5);
     
     size_t data_length = offsetof(GlobalHeader, checksum);
     global_header->checksum = crc32((const void *)global_header, data_length);
 
+    // Create global header mirror
+
+    memcpy((void *)(heap + sizeof(GlobalHeader)), (void *)global_header, sizeof(GlobalHeader));
+
     // Initialize the first Block Header
 
-    BlockHeader *block_header = (BlockHeader *)(heap + sizeof(GlobalHeader));
+    BlockHeader *block_header = (BlockHeader *)(heap + sizeof(GlobalHeader) * 2);
     memset(block_header, 0, sizeof(BlockHeader));
 
-    block_header->magic = BLOCK_HEADER_MAGIC;
-    block_header->block_size = (SIZE_T)(heap_size - sizeof(GlobalHeader));
+    block_header->block_size = (SIZE_T)(heap_size - sizeof(GlobalHeader) * 2);
     block_header->flags = BLOCK_FREE; // Mark as free
     block_header->prev_free_offset = 0;
     block_header->next_free_offset = 0;
     data_length = offsetof(BlockHeader, header_checksum);
     block_header->header_checksum = crc32((const void *)block_header, data_length);
     block_header->payload_checksum = 0;
+
+    // Initialize the first Block Journal Entry
+
+    JournalEntry *journal_entry = (JournalEntry *)((uint8_t *)block_header + sizeof(BlockHeader));
+    memset(journal_entry, 0, sizeof(JournalEntry));
 
     // Initialize the Block Footer
     BlockFooter *block_footer = (BlockFooter *)(heap + heap_size - sizeof(BlockFooter));
