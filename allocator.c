@@ -65,7 +65,7 @@ bool within_block(BlockHeader *block, OFFSET_T offset) {
 }
 
 
-inline SIZE_T calculate_minimum_heap_size() {
+SIZE_T calculate_minimum_heap_size() {
     SIZE_T headers_sum = sizeof(GlobalHeader) * 2 + sizeof(BlockHeader) + HEADER_PADDING;
     return headers_sum + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
 }
