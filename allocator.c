@@ -11,7 +11,7 @@ typedef uint32_t CHECKSUM_T;
 #define ALIGN (SIZE_T)40
 #define GLOBAL_HEADER_MAGIC (uint32_t)0xDEADBEEF
 #define BLOCK_HEADER_MAGIC (uint32_t)0xBEEFCAFE
-#define MIN_PAYLOAD_SIZE (SIZE_T)64
+#define MIN_PAYLOAD_SIZE (SIZE_T)28
 
 #define BLOCK_FREE (uint8_t)0x01
 #define BLOCK_ALLOCATED (uint8_t)0x02
