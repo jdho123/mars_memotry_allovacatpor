@@ -10,8 +10,7 @@ typedef uint32_t OFFSET_T;
 typedef uint32_t CHECKSUM_T;
 
 #define ALIGN (SIZE_T)40
-#define GLOBAL_HEADER_MAGIC (uint32_t)0xDEADBEEF
-#define BLOCK_HEADER_MAGIC (uint32_t)0xBEEFCAFE
+#define HEADER_PADDING (SIZE_T)16
 #define MIN_PAYLOAD_SIZE (SIZE_T)28
 
 #define BLOCK_FREE (uint8_t)0x01
@@ -33,13 +32,6 @@ typedef struct {
     CHECKSUM_T header_checksum;
     CHECKSUM_T payload_checksum;
 } BlockHeader;
-
-typedef struct {
-    OFFSET_T block_offset;
-    SIZE_T old_val;
-    uint8_t valid;
-    CHECKSUM_T entry_checksum;
-} JournalEntry;
 
 typedef struct {
     SIZE_T block_size;
@@ -74,7 +66,7 @@ bool within_block(BlockHeader *block, OFFSET_T offset) {
 
 
 inline SIZE_T calculate_minimum_heap_size() {
-    SIZE_T headers_sum = sizeof(GlobalHeader) * 2 + sizeof(BlockHeader) + sizeof(JournalEntry);
+    SIZE_T headers_sum = sizeof(GlobalHeader) * 2 + sizeof(BlockHeader) + HEADER_PADDING;
     return headers_sum + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
 }
 
@@ -118,11 +110,6 @@ int mm_init(uint8_t *heap, size_t heap_size) {
     data_length = offsetof(BlockHeader, header_checksum);
     block_header->header_checksum = crc32((const void *)block_header, data_length);
     block_header->payload_checksum = 0;
-
-    // Initialize the first Block Journal Entry
-
-    JournalEntry *journal_entry = (JournalEntry *)((uint8_t *)block_header + sizeof(BlockHeader));
-    memset(journal_entry, 0, sizeof(JournalEntry));
 
     // Initialize the Block Footer
     BlockFooter *block_footer = (BlockFooter *)(heap + heap_size - sizeof(BlockFooter));
