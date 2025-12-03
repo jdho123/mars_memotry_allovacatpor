@@ -1,6 +1,7 @@
 #include "allocator.h"
 #include "crc32.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 
@@ -55,6 +56,20 @@ SIZE_T align_up(SIZE_T x, SIZE_T align) {
     SIZE_T r = x % align;
     if (r == 0) return x;
     return x + (align - r);
+}
+
+
+OFFSET_T calculate_block_offset(BlockHeader *block) {
+    return (OFFSET_T)(s_heap - (uint8_t)block);
+}
+
+bool within_block(BlockHeader *block, OFFSET_T offset) {
+    OFFSET_T block_offset = calculate_block_offset(block);
+    if (offset < block_offset || offset >= block_offset + block->block_size) {
+        return false;
+    }
+
+    return true;
 }
 
 
