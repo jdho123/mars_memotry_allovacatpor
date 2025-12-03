@@ -58,10 +58,9 @@ SIZE_T align_up(SIZE_T x, SIZE_T align) {
 }
 
 
-SIZE_T calculate_minimum_heap_size() {
-    SIZE_T headers_sum = sizeof(GlobalHeader) + sizeof(BlockHeader) + sizeof(JournalEntry);
-    SIZE_T min_payload_start = align_up(headers_sum, ALIGN);
-    return min_payload_start + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
+inline SIZE_T calculate_minimum_heap_size() {
+    SIZE_T headers_sum = sizeof(GlobalHeader) * 2 + sizeof(BlockHeader) + sizeof(JournalEntry);
+    return headers_sum + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
 }
 
 
