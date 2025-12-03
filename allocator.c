@@ -52,7 +52,7 @@ SIZE_T align_up(SIZE_T x, SIZE_T align) {
 
 
 OFFSET_T calculate_block_offset(BlockHeader *block) {
-    return (OFFSET_T)(s_heap - (uint8_t)block);
+    return (OFFSET_T)(s_heap - (uint8_t *)block);
 }
 
 bool within_block(BlockHeader *block, OFFSET_T offset) {
