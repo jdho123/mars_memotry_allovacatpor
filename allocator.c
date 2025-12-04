@@ -125,3 +125,13 @@ int mm_init(uint8_t *heap, size_t heap_size) {
 
     return 0;
 }
+
+
+void *get_payload_ptr(BlockHeader *block) {
+    return (uint8_t *)block + sizeof(BlockHeader) + HEADER_PADDING;
+}
+
+
+BlockHeader *get_block_ptr(void *payload_ptr) {
+    return (BlockHeader *)((uint8_t *)payload_ptr - HEADER_PADDING - sizeof(BlockHeader));
+}
