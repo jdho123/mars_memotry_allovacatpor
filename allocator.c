@@ -135,3 +135,8 @@ void *get_payload_ptr(BlockHeader *block) {
 BlockHeader *get_block_ptr(void *payload_ptr) {
     return (BlockHeader *)((uint8_t *)payload_ptr - HEADER_PADDING - sizeof(BlockHeader));
 }
+
+
+BlockFooter *get_footer_ptr(BlockHeader *block) {
+    return (BlockFooter *)((uint8_t *)block + block->block_size - sizeof(BlockFooter));
+}
