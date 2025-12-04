@@ -31,8 +31,8 @@ typedef struct {
     uint8_t flags;
     OFFSET_T prev_free_offset;
     OFFSET_T next_free_offset;
-    CHECKSUM_T header_checksum;
     CHECKSUM_T payload_checksum;
+    CHECKSUM_T header_checksum;
 } BlockHeader;
 
 typedef struct {
