@@ -53,7 +53,7 @@ SIZE_T align_up(SIZE_T x, SIZE_T align) {
 }
 
 
-BlockHeader *get_block_ptr(OFFSET_T offset) {
+BlockHeader *get_block_ptr_offset(OFFSET_T offset) {
     return (BlockHeader *)(s_heap + offset);
 }
 
@@ -63,7 +63,7 @@ void *get_payload_ptr(BlockHeader *block) {
 }
 
 
-BlockHeader *get_block_ptr(void *payload_ptr) {
+BlockHeader *get_block_ptr_payload(void *payload_ptr) {
     return (BlockHeader *)((uint8_t *)payload_ptr - HEADER_PADDING - sizeof(BlockHeader));
 }
 
