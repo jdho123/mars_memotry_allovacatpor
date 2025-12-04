@@ -10,7 +10,8 @@ typedef uint32_t OFFSET_T;
 typedef uint32_t CHECKSUM_T;
 
 #define ALIGN (SIZE_T)40
-#define HEADER_PADDING (SIZE_T)16
+#define HEADER_MAGIC (uint32_t)0xDEADBEEF
+#define HEADER_PADDING (SIZE_T)12
 #define MIN_PAYLOAD_SIZE (SIZE_T)28
 
 #define BLOCK_FREE (uint8_t)0x01
@@ -25,6 +26,7 @@ typedef struct {
 } GlobalHeader;
 
 typedef struct {
+    uint32_t magic;
     SIZE_T block_size;
     uint8_t flags;
     OFFSET_T prev_free_offset;
@@ -103,6 +105,7 @@ int mm_init(uint8_t *heap, size_t heap_size) {
     BlockHeader *block_header = (BlockHeader *)(heap + sizeof(GlobalHeader) * 2);
     memset(block_header, 0, sizeof(BlockHeader));
 
+    block_header->magic = HEADER_MAGIC;
     block_header->block_size = (SIZE_T)(heap_size - sizeof(GlobalHeader) * 2);
     block_header->flags = BLOCK_FREE; // Mark as free
     block_header->prev_free_offset = 0;
