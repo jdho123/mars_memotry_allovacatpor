@@ -140,3 +140,26 @@ BlockHeader *get_block_ptr(void *payload_ptr) {
 BlockFooter *get_footer_ptr(BlockHeader *block) {
     return (BlockFooter *)((uint8_t *)block + block->block_size - sizeof(BlockFooter));
 }
+
+bool validate_block(BlockHeader *block) {
+    if (block->magic != HEADER_MAGIC) return false;
+
+    size_t data_length = offsetof(BlockHeader, header_checksum);
+    CHECKSUM_T calculated_header_checksum = crc32((const void *)block, data_length);
+    if (calculated_header_checksum != block->header_checksum) return false;
+
+    if (block->payload_checksum != 0) {
+        data_length = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+        CHECKSUM_T calculated_payload_checksum = crc32((const void *)get_payload_ptr(block), data_length);
+        if (calculated_payload_checksum != block->payload_checksum) return false;
+    }
+
+    BlockFooter *footer = get_footer_ptr(block);
+    data_length = offsetof(BlockFooter, footer_checksum);
+    CHECKSUM_T calculated_footer_checksum = crc32((const void *)footer, data_length);
+    if (calculated_footer_checksum != footer->footer_checksum) return false;
+
+    if (block->block_size != footer->block_size || block->flags != footer->flags) return false;
+
+    return true;
+}
