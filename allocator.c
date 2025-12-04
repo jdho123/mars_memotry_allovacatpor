@@ -53,6 +53,26 @@ SIZE_T align_up(SIZE_T x, SIZE_T align) {
 }
 
 
+BlockHeader *get_block_ptr(OFFSET_T offset) {
+    return (BlockHeader *)(s_heap + offset);
+}
+
+
+void *get_payload_ptr(BlockHeader *block) {
+    return (uint8_t *)block + sizeof(BlockHeader) + HEADER_PADDING;
+}
+
+
+BlockHeader *get_block_ptr(void *payload_ptr) {
+    return (BlockHeader *)((uint8_t *)payload_ptr - HEADER_PADDING - sizeof(BlockHeader));
+}
+
+
+BlockFooter *get_footer_ptr(BlockHeader *block) {
+    return (BlockFooter *)((uint8_t *)block + block->block_size - sizeof(BlockFooter));
+}
+
+
 OFFSET_T calculate_block_offset(BlockHeader *block) {
     return (OFFSET_T)(s_heap - (uint8_t *)block);
 }
@@ -126,20 +146,6 @@ int mm_init(uint8_t *heap, size_t heap_size) {
     return 0;
 }
 
-
-void *get_payload_ptr(BlockHeader *block) {
-    return (uint8_t *)block + sizeof(BlockHeader) + HEADER_PADDING;
-}
-
-
-BlockHeader *get_block_ptr(void *payload_ptr) {
-    return (BlockHeader *)((uint8_t *)payload_ptr - HEADER_PADDING - sizeof(BlockHeader));
-}
-
-
-BlockFooter *get_footer_ptr(BlockHeader *block) {
-    return (BlockFooter *)((uint8_t *)block + block->block_size - sizeof(BlockFooter));
-}
 
 bool validate_block(BlockHeader *block) {
     if (block->magic != HEADER_MAGIC) return false;
