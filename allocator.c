@@ -348,3 +348,40 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
 
     return (int)bytes_to_read;
 }
+
+
+int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
+    if (ptr == NULL || !within_heap((uint8_t *)ptr) || src == NULL) return -1;
+
+    BlockHeader *block = get_block_ptr_payload(ptr);
+
+    if (!validate_block_header(block)) {
+        BlockHeader *next_block = scan_next_block((uint8_t *)block);
+
+        SIZE_T block_size;
+        if (next_block == NULL) {
+            block_size = s_heap_size - calculate_block_offset(block);
+        }
+        else {
+            block_size = (uint8_t *)next_block - (uint8_t *)block;
+        }
+        quarantine_block(block, block_size);
+
+        return -1;
+    }
+    else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) return -1;
+
+    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    if (offset >= payload_size) return 0;
+
+    SIZE_T bytes_available = payload_size - offset;
+    SIZE_T bytes_to_write = (len > bytes_available) ? bytes_available : len;
+
+    memcpy((uint8_t *)ptr + offset, src, bytes_to_write);
+
+    block->payload_checksum = crc32((const void *)ptr, payload_size);
+    size_t data_length = offsetof(BlockHeader, header_checksum);
+    block->header_checksum = crc32((const void *)block, data_length);
+
+    return (int)bytes_to_write;
+}
