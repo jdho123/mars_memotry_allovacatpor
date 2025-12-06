@@ -10,6 +10,7 @@ typedef uint32_t OFFSET_T;
 typedef uint32_t CHECKSUM_T;
 
 #define ALIGN (SIZE_T)40
+#define GLOBAL_MAGIC (uint32_t)0xCAFEBABE
 #define HEADER_MAGIC (uint32_t)0xDEADBEEF
 #define HEADER_PADDING (SIZE_T)20
 #define MIN_PAYLOAD_SIZE (SIZE_T)28
@@ -19,8 +20,8 @@ typedef uint32_t CHECKSUM_T;
 #define BLOCK_QUARANTINE (uint8_t)0x04
 
 typedef struct {
-    OFFSET_T free_list_head;
-    OFFSET_T quarantine_list_head;
+    uint32_t magic;
+    uint32_t allocation_count;
     uint8_t unused_pattern[5];
     CHECKSUM_T checksum;
 } GlobalHeader;
@@ -112,8 +113,8 @@ int mm_init(uint8_t *heap, size_t heap_size) {
     GlobalHeader *global_header = (GlobalHeader *)heap;
     memset(global_header, 0, sizeof(GlobalHeader));
 
-    global_header->free_list_head = sizeof(GlobalHeader) * 2;
-    global_header->quarantine_list_head = 0;
+    global_header->magic = GLOBAL_MAGIC;
+    global_header->allocation_count = 0;
     memcpy(global_header->unused_pattern, unused_pattern, 5);
     
     size_t data_length = offsetof(GlobalHeader, checksum);
