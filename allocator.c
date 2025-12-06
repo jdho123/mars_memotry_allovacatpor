@@ -315,3 +315,36 @@ void *mm_malloc(size_t size) {
 
     return payload_ptr;
 }
+
+
+int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
+    if (ptr == NULL || !within_heap((uint8_t *)ptr) || buf == NULL) return -1;
+
+    BlockHeader *block = get_block_ptr_payload(ptr);
+
+    if (!validate_block_header(block)) {
+        BlockHeader *next_block = scan_next_block((uint8_t *)block);
+
+        SIZE_T block_size;
+        if (next_block == NULL) {
+            block_size = s_heap_size - calculate_block_offset(block);
+        }
+        else {
+            block_size = (uint8_t *)next_block - (uint8_t *)block;
+        }
+        quarantine_block(block, block_size);
+
+        return -1;
+    }
+    else if (!validate_block_payload(block) || block->flags != BLOCK_ALLOCATED) return -1;
+
+    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    if (offset >= payload_size) return 0;
+
+    SIZE_T bytes_available = payload_size - offset;
+    SIZE_T bytes_to_read = (len > bytes_available) ? bytes_available : len;
+
+    memcpy(buf, (uint8_t *)ptr + offset, bytes_to_read);
+
+    return (int)bytes_to_read;
+}
