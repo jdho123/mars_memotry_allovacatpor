@@ -11,7 +11,7 @@ typedef uint32_t CHECKSUM_T;
 
 #define ALIGN (SIZE_T)40
 #define HEADER_MAGIC (uint32_t)0xDEADBEEF
-#define HEADER_PADDING (SIZE_T)12
+#define HEADER_PADDING (SIZE_T)20
 #define MIN_PAYLOAD_SIZE (SIZE_T)28
 
 #define BLOCK_FREE (uint8_t)0x01
@@ -29,8 +29,6 @@ typedef struct {
     uint32_t magic;
     SIZE_T block_size;
     uint8_t flags;
-    OFFSET_T prev_free_offset;
-    OFFSET_T next_free_offset;
     CHECKSUM_T payload_checksum;
     CHECKSUM_T header_checksum;
 } BlockHeader;
@@ -128,8 +126,6 @@ int mm_init(uint8_t *heap, size_t heap_size) {
     block_header->magic = HEADER_MAGIC;
     block_header->block_size = (SIZE_T)(heap_size - sizeof(GlobalHeader) * 2);
     block_header->flags = BLOCK_FREE; // Mark as free
-    block_header->prev_free_offset = 0;
-    block_header->next_free_offset = 0;
     data_length = offsetof(BlockHeader, header_checksum);
     block_header->header_checksum = crc32((const void *)block_header, data_length);
     block_header->payload_checksum = 0;
