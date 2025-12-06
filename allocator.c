@@ -246,3 +246,72 @@ BlockHeader *scan_next_block(uint8_t *ptr) {
     }
     return NULL;
 }
+
+
+void quarantine_block(BlockHeader *block, SIZE_T size) {
+    printf("quarantined");
+    // Poison payload
+
+    uint8_t *payload_ptr = get_payload_ptr(block);
+    SIZE_T payload_size = size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    memset(payload_ptr, 0xCA, payload_size);
+
+    BlockFooter *footer = get_footer_ptr(block);
+    footer->block_size = size;
+    footer->flags = BLOCK_QUARANTINE;
+    size_t data_length = offsetof(BlockFooter, footer_checksum);
+    footer->footer_checksum = crc32((const void *)footer, data_length);
+
+    block->magic = HEADER_MAGIC;
+    block->block_size = size;
+    block->flags = BLOCK_QUARANTINE;
+    block->payload_checksum = 0;
+    data_length = offsetof(BlockHeader, header_checksum);
+    block->header_checksum = crc32((const void *)block, data_length);
+}
+
+
+void *mm_malloc(size_t size) {
+    SIZE_T aligned_size = calculate_aligned_block_size(size);
+
+    BlockHeader *current_block = (BlockHeader *)(s_heap + sizeof(GlobalHeader) * 2);
+
+    while (within_heap((uint8_t *)current_block)) {
+        if (!validate_block_header(current_block)) {
+            BlockHeader *next_block = scan_next_block((uint8_t *)current_block);
+            if (next_block == NULL) return NULL;
+
+            SIZE_T block_size = (uint8_t *)next_block - (uint8_t *)current_block;
+            quarantine_block(current_block, block_size);
+            current_block = next_block;
+            continue;
+        }
+
+        if (current_block->flags == BLOCK_FREE && current_block->block_size >= aligned_size) {
+            break;
+        }
+
+        current_block = (BlockHeader *)((uint8_t *)current_block + current_block->block_size);
+    }
+
+    if (!within_heap((uint8_t *)current_block)) return NULL;
+
+    split_block(current_block, aligned_size);
+
+    uint8_t *payload_ptr = get_payload_ptr(current_block);
+
+    current_block->flags = BLOCK_ALLOCATED;
+    SIZE_T payload_size = current_block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    memset(payload_ptr, 0, payload_size);
+    current_block->payload_checksum = crc32((const void *)get_payload_ptr(current_block), payload_size);
+    size_t data_length = offsetof(BlockHeader, header_checksum);
+    current_block->header_checksum = crc32((const void *)current_block, data_length);
+
+    BlockFooter *footer = get_footer_ptr(current_block);
+    footer->block_size = current_block->block_size;
+    footer->flags = BLOCK_ALLOCATED;
+    data_length = offsetof(BlockFooter, footer_checksum);
+    footer->footer_checksum = crc32((const void *)footer, data_length);
+
+    return payload_ptr;
+}
