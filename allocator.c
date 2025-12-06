@@ -91,6 +91,11 @@ SIZE_T calculate_minimum_heap_size() {
 }
 
 
+SIZE_T calculate_minimum_block_size() {
+    return sizeof(BlockHeader) + HEADER_PADDING + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
+}
+
+
 int mm_init(uint8_t *heap, size_t heap_size) {
     if (heap == NULL || heap_size < calculate_minimum_heap_size()) {
         return -1;
@@ -167,6 +172,68 @@ bool validate_block_payload(BlockHeader *block) {
     size_t data_length = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
     CHECKSUM_T calculated_payload_checksum = crc32((const void *)get_payload_ptr(block), data_length);
     if (calculated_payload_checksum != block->payload_checksum) return false;
+
+    return true;
+}
+
+
+SIZE_T calculate_aligned_block_size(SIZE_T payload_size) {
+    SIZE_T unaligned_size = sizeof(BlockHeader) + HEADER_PADDING + payload_size + sizeof(BlockFooter);
+    SIZE_T aligned_size = align_up(unaligned_size, ALIGN);
+    return aligned_size >= calculate_minimum_block_size() ? aligned_size : calculate_minimum_block_size();
+}
+
+
+bool split_block(BlockHeader *block, SIZE_T size) {
+    BlockFooter *second_footer = get_footer_ptr(block);
+
+    SIZE_T first_size = calculate_aligned_block_size(size);
+    SIZE_T second_size = block->block_size - first_size;
+
+    if (second_size < calculate_minimum_block_size()) return false;
+
+    uint8_t *split_ptr = (uint8_t *)block + first_size;
+
+    // Create second header
+
+    BlockHeader second_header = {
+        .magic = HEADER_MAGIC,
+        .block_size = second_size,
+        .flags = BLOCK_FREE,
+        .payload_checksum = 0,
+        .header_checksum = 0
+    };
+
+    size_t data_length = offsetof(BlockHeader, header_checksum);
+    second_header.header_checksum = crc32((const void *)&second_header, data_length);
+
+    memcpy(split_ptr, &second_header, sizeof(BlockHeader));
+
+    // Create first footer
+
+    BlockFooter first_footer = {
+        .block_size = first_size,
+        .flags = BLOCK_FREE,
+        .footer_checksum = 0
+    };
+
+    data_length = offsetof(BlockFooter, footer_checksum);
+    first_footer.footer_checksum = crc32((const void *)&first_footer, data_length);
+
+    memcpy(split_ptr - sizeof(BlockFooter), &first_footer, sizeof(BlockFooter));
+
+    // Update first header
+
+    block->block_size = first_size;
+    data_length = offsetof(BlockHeader, header_checksum);
+    block->header_checksum = crc32((const void *)block, data_length);
+
+    // Update second footer
+
+    second_footer->block_size = second_size;
+    second_footer->flags = BLOCK_FREE;
+    data_length = offsetof(BlockFooter, footer_checksum);
+    second_footer->footer_checksum = crc32((const void *)second_footer, data_length);
 
     return true;
 }
