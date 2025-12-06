@@ -73,7 +73,7 @@ BlockFooter *get_footer_ptr(BlockHeader *block) {
 
 
 OFFSET_T calculate_block_offset(BlockHeader *block) {
-    return (OFFSET_T)(s_heap - (uint8_t *)block);
+    return (OFFSET_T)((uint8_t *)block - s_heap);
 }
 
 
@@ -184,7 +184,7 @@ SIZE_T calculate_aligned_block_size(SIZE_T payload_size) {
 bool split_block(BlockHeader *block, SIZE_T size) {
     BlockFooter *second_footer = get_footer_ptr(block);
 
-    SIZE_T first_size = calculate_aligned_block_size(size);
+    SIZE_T first_size = size;
     SIZE_T second_size = block->block_size - first_size;
 
     if (second_size < calculate_minimum_block_size()) return false;
