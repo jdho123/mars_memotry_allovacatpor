@@ -336,7 +336,7 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
 
         return -1;
     }
-    else if (!validate_block_payload(block) || block->flags != BLOCK_ALLOCATED) return -1;
+    else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) return -1;
 
     SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
     if (offset >= payload_size) return 0;
