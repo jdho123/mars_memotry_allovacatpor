@@ -76,13 +76,9 @@ OFFSET_T calculate_block_offset(BlockHeader *block) {
     return (OFFSET_T)(s_heap - (uint8_t *)block);
 }
 
-bool within_block(BlockHeader *block, OFFSET_T offset) {
-    OFFSET_T block_offset = calculate_block_offset(block);
-    if (offset < block_offset || offset >= block_offset + block->block_size) {
-        return false;
-    }
 
-    return true;
+bool within_heap(uint8_t *ptr) {
+    return ptr >= s_heap && ptr < (s_heap + s_heap_size);
 }
 
 
