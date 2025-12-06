@@ -236,10 +236,10 @@ bool split_block(BlockHeader *block, SIZE_T size) {
 }
 
 
-BlockHeader *scan_next_free(uint8_t *ptr) {
+BlockHeader *scan_next_block(uint8_t *ptr) {
     while (within_heap(ptr)) {
         BlockHeader *block = (BlockHeader *)ptr;
-        if (validate_block_header(block) && (block->flags & BLOCK_FREE)) {
+        if (validate_block_header(block)) {
             return block;
         }
         ptr += 1;
