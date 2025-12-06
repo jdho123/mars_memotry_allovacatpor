@@ -143,18 +143,12 @@ int mm_init(uint8_t *heap, size_t heap_size) {
 }
 
 
-bool validate_block(BlockHeader *block) {
+bool validate_block_header(BlockHeader *block) {
     if (block->magic != HEADER_MAGIC) return false;
 
     size_t data_length = offsetof(BlockHeader, header_checksum);
     CHECKSUM_T calculated_header_checksum = crc32((const void *)block, data_length);
     if (calculated_header_checksum != block->header_checksum) return false;
-
-    if (block->payload_checksum != 0) {
-        data_length = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
-        CHECKSUM_T calculated_payload_checksum = crc32((const void *)get_payload_ptr(block), data_length);
-        if (calculated_payload_checksum != block->payload_checksum) return false;
-    }
 
     BlockFooter *footer = get_footer_ptr(block);
     data_length = offsetof(BlockFooter, footer_checksum);
@@ -162,6 +156,17 @@ bool validate_block(BlockHeader *block) {
     if (calculated_footer_checksum != footer->footer_checksum) return false;
 
     if (block->block_size != footer->block_size || block->flags != footer->flags) return false;
+
+    return true;
+}
+
+
+bool validate_block_payload(BlockHeader *block) {
+    if (block->payload_checksum == 0) return true;
+
+    size_t data_length = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    CHECKSUM_T calculated_payload_checksum = crc32((const void *)get_payload_ptr(block), data_length);
+    if (calculated_payload_checksum != block->payload_checksum) return false;
 
     return true;
 }
