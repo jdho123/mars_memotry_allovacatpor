@@ -325,6 +325,14 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
 
     if (!validate_block_header(block)) {
         BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
+        BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
+
+        if (prev_block == NULL) {
+            block = (BlockHeader *)(s_heap + 2 * sizeof(GlobalHeader));
+        }
+        else {
+            block = (BlockHeader *)((uint8_t *)prev_block + prev_block->block_size);
+        }
 
         SIZE_T block_size;
         if (next_block == NULL) {
@@ -358,6 +366,14 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
 
     if (!validate_block_header(block)) {
         BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
+        BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
+
+        if (prev_block == NULL) {
+            block = (BlockHeader *)(s_heap + 2 * sizeof(GlobalHeader));
+        }
+        else {
+            block = (BlockHeader *)((uint8_t *)prev_block + prev_block->block_size);
+        }
 
         SIZE_T block_size;
         if (next_block == NULL) {
