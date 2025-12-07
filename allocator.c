@@ -236,13 +236,14 @@ bool split_block(BlockHeader *block, SIZE_T size) {
 }
 
 
-BlockHeader *scan_next_block(uint8_t *ptr) {
+BlockHeader *scan_next_block(uint8_t *ptr, bool reverse) {
     while (within_heap(ptr)) {
         BlockHeader *block = (BlockHeader *)ptr;
         if (validate_block_header(block)) {
             return block;
         }
-        ptr += 1;
+        if (reverse) ptr -= 1;
+        else ptr += 1;
     }
     return NULL;
 }
@@ -278,7 +279,7 @@ void *mm_malloc(size_t size) {
 
     while (within_heap((uint8_t *)current_block)) {
         if (!validate_block_header(current_block)) {
-            BlockHeader *next_block = scan_next_block((uint8_t *)current_block);
+            BlockHeader *next_block = scan_next_block((uint8_t *)current_block, false);
             if (next_block == NULL) return NULL;
 
             SIZE_T block_size = (uint8_t *)next_block - (uint8_t *)current_block;
@@ -323,7 +324,7 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
     BlockHeader *block = get_block_ptr_payload(ptr);
 
     if (!validate_block_header(block)) {
-        BlockHeader *next_block = scan_next_block((uint8_t *)block);
+        BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
 
         SIZE_T block_size;
         if (next_block == NULL) {
@@ -356,7 +357,7 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
     BlockHeader *block = get_block_ptr_payload(ptr);
 
     if (!validate_block_header(block)) {
-        BlockHeader *next_block = scan_next_block((uint8_t *)block);
+        BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
 
         SIZE_T block_size;
         if (next_block == NULL) {
