@@ -419,3 +419,80 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
 
     return (int)bytes_to_write;
 }
+
+
+bool coalesce_blocks(BlockHeader *block) {
+    BlockHeader *next_block = (BlockHeader *)((uint8_t *)block + block->block_size);
+    if (validate_block_header(next_block) && next_block->flags == BLOCK_FREE) {
+        block->block_size += next_block->block_size;
+        size_t data_length = offsetof(BlockHeader, header_checksum);
+        block->header_checksum = crc32((const void *)block, data_length);
+
+        BlockFooter *footer = get_footer_ptr(next_block);
+        footer->block_size = block->block_size;
+        footer->flags = BLOCK_FREE;
+        data_length = offsetof(BlockFooter, footer_checksum);
+        footer->footer_checksum = crc32((const void *)footer, data_length);    
+    }
+
+    BlockFooter *prev_footer = (BlockFooter *)((uint8_t *)block - sizeof(BlockFooter));
+    if (validate_block_footer(prev_footer) && prev_footer->flags == BLOCK_FREE) {
+        BlockHeader *prev_block = (BlockHeader *)((uint8_t *)block - prev_footer->block_size);
+        if (validate_block_metadata(prev_block)) {
+            prev_block->block_size += block->block_size;
+            size_t data_length = offsetof(BlockHeader, header_checksum);
+            prev_block->header_checksum = crc32((const void *)prev_block, data_length);
+
+            BlockFooter *footer = get_footer_ptr(block);
+            footer->block_size = prev_block->block_size;
+            data_length = offsetof(BlockFooter, footer_checksum);
+            footer->footer_checksum = crc32((const void *)footer, data_length);        
+        }
+    }
+
+    return true;
+}
+
+
+void mm_free(void *ptr) {
+    if (ptr == NULL || !within_heap((uint8_t *)ptr)) return;
+
+    BlockHeader *block = get_block_ptr_payload(ptr);
+
+    if (!validate_block_metadata(block)) {
+        BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
+        BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
+
+        if (prev_block == NULL) {
+            block = (BlockHeader *)(s_heap + 2 * sizeof(GlobalHeader));
+        }
+        else {
+            block = (BlockHeader *)((uint8_t *)prev_block + prev_block->block_size);
+        }
+
+        SIZE_T block_size;
+        if (next_block == NULL) {
+            block_size = s_heap_size - calculate_block_offset(block);
+        }
+        else {
+            block_size = (uint8_t *)next_block - (uint8_t *)block;
+        }
+
+        create_block(block, block_size);
+    }
+
+    block->flags = BLOCK_FREE;
+    block->payload_checksum = 0;
+    size_t data_length = offsetof(BlockHeader, header_checksum);
+    block->header_checksum = crc32((const void *)block, data_length);
+
+    BlockFooter *footer = get_footer_ptr(block);
+    footer->flags = BLOCK_FREE;
+    data_length = offsetof(BlockFooter, footer_checksum);
+    footer->footer_checksum = crc32((const void *)footer, data_length);
+
+    coalesce_blocks(block);
+
+    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    memset((uint8_t *)ptr, 0, payload_size);
+}
