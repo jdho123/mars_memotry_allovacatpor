@@ -154,10 +154,25 @@ bool validate_block_header(BlockHeader *block) {
     CHECKSUM_T calculated_header_checksum = crc32((const void *)block, data_length);
     if (calculated_header_checksum != block->header_checksum) return false;
 
-    BlockFooter *footer = get_footer_ptr(block);
-    data_length = offsetof(BlockFooter, footer_checksum);
+    return true;
+}
+
+
+bool validate_block_footer(BlockFooter *footer) {
+    size_t data_length = offsetof(BlockFooter, footer_checksum);
     CHECKSUM_T calculated_footer_checksum = crc32((const void *)footer, data_length);
     if (calculated_footer_checksum != footer->footer_checksum) return false;
+
+    return true;
+}
+
+
+bool validate_block_metadata(BlockHeader *block) {
+    if (!validate_block_header(block)) return false;
+
+    BlockFooter *footer = get_footer_ptr(block);
+
+    if (!validate_block_footer(footer)) return false;
 
     if (block->block_size != footer->block_size || block->flags != footer->flags) return false;
 
@@ -241,7 +256,7 @@ bool split_block(BlockHeader *block, SIZE_T size) {
 BlockHeader *scan_next_block(uint8_t *ptr, bool reverse) {
     while (within_heap(ptr)) {
         BlockHeader *block = (BlockHeader *)ptr;
-        if (validate_block_header(block)) {
+        if (validate_block_metadata(block)) {
             return block;
         }
         if (reverse) ptr -= 1;
@@ -280,7 +295,7 @@ void *mm_malloc(size_t size) {
     BlockHeader *current_block = (BlockHeader *)(s_heap + sizeof(GlobalHeader) * 2);
 
     while (within_heap((uint8_t *)current_block)) {
-        if (!validate_block_header(current_block)) {
+        if (!validate_block_metadata(current_block)) {
             BlockHeader *next_block = scan_next_block((uint8_t *)current_block, false);
             if (next_block == NULL) return NULL;
 
@@ -325,7 +340,7 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
 
     BlockHeader *block = get_block_ptr_payload(ptr);
 
-    if (!validate_block_header(block)) {
+    if (!validate_block_metadata(block)) {
         BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
         BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
 
@@ -366,7 +381,7 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
 
     BlockHeader *block = get_block_ptr_payload(ptr);
 
-    if (!validate_block_header(block)) {
+    if (!validate_block_metadata(block)) {
         BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
         BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
 
