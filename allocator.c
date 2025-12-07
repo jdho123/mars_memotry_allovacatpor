@@ -93,6 +93,27 @@ SIZE_T calculate_minimum_block_size() {
 }
 
 
+void create_block(void *block, SIZE_T size) {
+    BlockHeader *block_header = (BlockHeader *)block;
+    memset(block_header, 0, sizeof(BlockHeader));
+
+    block_header->magic = HEADER_MAGIC;
+    block_header->block_size = size;
+    block_header->flags = BLOCK_FREE;
+    block_header->payload_checksum = 0;
+    size_t data_length = offsetof(BlockHeader, header_checksum);
+    block_header->header_checksum = crc32((const void *)block_header, data_length);
+
+    BlockFooter *footer = get_footer_ptr(block_header);
+    memset(footer, 0, sizeof(BlockFooter));
+
+    footer->block_size = size;
+    footer->flags = BLOCK_FREE;
+    data_length = offsetof(BlockFooter, footer_checksum);
+    footer->footer_checksum = crc32((const void *)footer, data_length);
+}
+
+
 int mm_init(uint8_t *heap, size_t heap_size) {
     if (heap == NULL || heap_size < calculate_minimum_heap_size()) {
         return -1;
@@ -120,26 +141,7 @@ int mm_init(uint8_t *heap, size_t heap_size) {
 
     memcpy((void *)(heap + sizeof(GlobalHeader)), (void *)global_header, sizeof(GlobalHeader));
 
-    // Initialize the first Block Header
-
-    BlockHeader *block_header = (BlockHeader *)(heap + sizeof(GlobalHeader) * 2);
-    memset(block_header, 0, sizeof(BlockHeader));
-
-    block_header->magic = HEADER_MAGIC;
-    block_header->block_size = (SIZE_T)(heap_size - sizeof(GlobalHeader) * 2);
-    block_header->flags = BLOCK_FREE; // Mark as free
-    data_length = offsetof(BlockHeader, header_checksum);
-    block_header->header_checksum = crc32((const void *)block_header, data_length);
-    block_header->payload_checksum = 0;
-
-    // Initialize the Block Footer
-    BlockFooter *block_footer = (BlockFooter *)(heap + heap_size - sizeof(BlockFooter));
-    memset(block_footer, 0, sizeof(BlockFooter));
-
-    block_footer->block_size = block_header->block_size;
-    block_footer->flags = BLOCK_FREE; // Mark as free
-    data_length = offsetof(BlockFooter, footer_checksum);
-    block_footer->footer_checksum = crc32((const void *)block_footer, data_length);
+    create_block((void *)(heap + sizeof(GlobalHeader) * 2), s_heap_size - 2 * sizeof(GlobalHeader));
 
     return 0;
 }
