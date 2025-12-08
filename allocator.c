@@ -314,7 +314,7 @@ void write_pattern(uint8_t *ptr, SIZE_T size) {
     OFFSET_T start = calculate_offset(ptr);
 
     for (size_t i = start; i < start + size; i++) {
-        ptr[i] = s_unused_pattern[i % 5];
+        ptr[i - start] = s_unused_pattern[i % 5];
     }
 }
 
@@ -450,7 +450,7 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
 }
 
 
-bool coalesce_blocks(BlockHeader *block) {
+BlockHeader *coalesce_blocks(BlockHeader *block) {
     BlockHeader *next_block = (BlockHeader *)((uint8_t *)block + block->block_size);
     if (validate_block_header(next_block) && next_block->flags == BLOCK_FREE) {
         block->block_size += next_block->block_size;
@@ -475,11 +475,13 @@ bool coalesce_blocks(BlockHeader *block) {
             BlockFooter *footer = get_footer_ptr(block);
             footer->block_size = prev_block->block_size;
             data_length = offsetof(BlockFooter, footer_checksum);
-            footer->footer_checksum = crc32((const void *)footer, data_length);        
+            footer->footer_checksum = crc32((const void *)footer, data_length);
+            
+            block = prev_block;
         }
     }
 
-    return true;
+    return block;
 }
 
 
@@ -504,8 +506,8 @@ void mm_free(void *ptr) {
     data_length = offsetof(BlockFooter, footer_checksum);
     footer->footer_checksum = crc32((const void *)footer, data_length);
 
-    coalesce_blocks(block);
+    block = coalesce_blocks(block);
 
     SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
-    memset((uint8_t *)ptr, 0, payload_size);
+    write_pattern((uint8_t *)block + sizeof(BlockHeader), payload_size);
 }
