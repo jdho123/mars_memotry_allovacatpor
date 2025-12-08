@@ -150,6 +150,11 @@ bool validate_block_footer(BlockFooter *footer) {
 }
 
 
+bool is_metadata_consistent(BlockHeader *block, BlockFooter *footer) {
+    return block->block_size == footer->block_size && block->flags == footer->flags;
+}
+
+
 bool validate_block_metadata(BlockHeader *block) {
     if (!validate_block_header(block)) return false;
 
@@ -157,9 +162,7 @@ bool validate_block_metadata(BlockHeader *block) {
 
     if (!validate_block_footer(footer)) return false;
 
-    if (block->block_size != footer->block_size || block->flags != footer->flags) return false;
-
-    return true;
+    return is_metadata_consistent(block, footer);
 }
 
 
@@ -269,6 +272,40 @@ void quarantine_block(BlockHeader *block, SIZE_T size) {
     block->payload_checksum = 0;
     data_length = offsetof(BlockHeader, header_checksum);
     block->header_checksum = crc32((const void *)block, data_length);
+}
+
+
+bool repair_block(BlockHeader *block, SIZE_T size) {
+    BlockFooter *footer = (BlockFooter *)((uint8_t *)block + size - sizeof(BlockFooter));
+
+    bool header_valid = validate_block_header(block);
+    bool footer_valid = validate_block_footer(footer);
+
+    if (header_valid && !footer_valid) {
+        memset((void *)footer, 0, sizeof(BlockFooter));
+        footer->block_size = block->block_size;
+        footer->flags = block->flags;
+        size_t data_length = offsetof(BlockFooter, footer_checksum);
+        footer->footer_checksum = crc32((const void *)footer, data_length);
+    }
+    else if (!header_valid && footer_valid) {
+        CHECKSUM_T payload_checksum = block->payload_checksum;
+
+        memset((void *)block, 0, sizeof(BlockHeader));
+        block->magic = HEADER_MAGIC;
+        block->block_size = footer->block_size;
+        block->flags = footer->flags;
+        block->payload_checksum = payload_checksum;
+        size_t data_length = offsetof(BlockHeader, header_checksum);
+        block->header_checksum = crc32((const void *)block, data_length);
+
+        if (!validate_block_header(block)) return false;
+    }
+    else if (!header_valid && !footer_valid) {
+        return false;
+    }
+
+    return is_metadata_consistent(block, footer);
 }
 
 
