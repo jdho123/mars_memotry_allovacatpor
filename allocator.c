@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 
 
 typedef uint32_t SIZE_T;
@@ -19,12 +20,6 @@ typedef uint32_t CHECKSUM_T;
 #define BLOCK_ALLOCATED (uint8_t)0x02
 #define BLOCK_QUARANTINE (uint8_t)0x04
 
-typedef struct {
-    uint32_t magic;
-    uint32_t allocation_count;
-    uint8_t unused_pattern[5];
-    CHECKSUM_T checksum;
-} GlobalHeader;
 
 typedef struct {
     uint32_t magic;
@@ -43,6 +38,7 @@ typedef struct {
 
 static uint8_t* s_heap = NULL;
 static size_t s_heap_size = 0;
+static uint8_t s_unused_pattern[5];
 
 
 SIZE_T align_up(SIZE_T x, SIZE_T align) {
@@ -83,8 +79,7 @@ bool within_heap(uint8_t *ptr) {
 
 
 SIZE_T calculate_minimum_heap_size() {
-    SIZE_T headers_sum = sizeof(GlobalHeader) * 2 + sizeof(BlockHeader) + HEADER_PADDING;
-    return headers_sum + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
+    return sizeof(BlockHeader) + HEADER_PADDING + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
 }
 
 
@@ -122,26 +117,9 @@ int mm_init(uint8_t *heap, size_t heap_size) {
     s_heap = heap;
     s_heap_size = heap_size;
 
-    uint8_t unused_pattern[5];
-    memcpy(unused_pattern, heap, 5);
+    memcpy(s_unused_pattern, heap, 5);
 
-    // Initialize Global Header
-
-    GlobalHeader *global_header = (GlobalHeader *)heap;
-    memset(global_header, 0, sizeof(GlobalHeader));
-
-    global_header->magic = GLOBAL_MAGIC;
-    global_header->allocation_count = 0;
-    memcpy(global_header->unused_pattern, unused_pattern, 5);
-    
-    size_t data_length = offsetof(GlobalHeader, checksum);
-    global_header->checksum = crc32((const void *)global_header, data_length);
-
-    // Create global header mirror
-
-    memcpy((void *)(heap + sizeof(GlobalHeader)), (void *)global_header, sizeof(GlobalHeader));
-
-    create_block((void *)(heap + sizeof(GlobalHeader) * 2), s_heap_size - 2 * sizeof(GlobalHeader));
+    create_block((void *)heap, s_heap_size);
 
     return 0;
 }
@@ -292,7 +270,7 @@ void quarantine_block(BlockHeader *block, SIZE_T size) {
 void *mm_malloc(size_t size) {
     SIZE_T aligned_size = calculate_aligned_block_size(size);
 
-    BlockHeader *current_block = (BlockHeader *)(s_heap + sizeof(GlobalHeader) * 2);
+    BlockHeader *current_block = (BlockHeader *)s_heap;
 
     while (within_heap((uint8_t *)current_block)) {
         if (!validate_block_metadata(current_block)) {
@@ -345,7 +323,7 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
         BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
 
         if (prev_block == NULL) {
-            block = (BlockHeader *)(s_heap + 2 * sizeof(GlobalHeader));
+            block = (BlockHeader *)s_heap;
         }
         else {
             block = (BlockHeader *)((uint8_t *)prev_block + prev_block->block_size);
@@ -386,7 +364,7 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
         BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
 
         if (prev_block == NULL) {
-            block = (BlockHeader *)(s_heap + 2 * sizeof(GlobalHeader));
+            block = (BlockHeader *)s_heap;
         }
         else {
             block = (BlockHeader *)((uint8_t *)prev_block + prev_block->block_size);
@@ -464,7 +442,7 @@ void mm_free(void *ptr) {
         BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
 
         if (prev_block == NULL) {
-            block = (BlockHeader *)(s_heap + 2 * sizeof(GlobalHeader));
+            block = (BlockHeader *)s_heap;
         }
         else {
             block = (BlockHeader *)((uint8_t *)prev_block + prev_block->block_size);
