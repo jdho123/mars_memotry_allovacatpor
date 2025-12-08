@@ -26,6 +26,7 @@ typedef struct {
     SIZE_T block_size;
     uint8_t flags;
     CHECKSUM_T payload_checksum;
+    uint8_t padding[HEADER_PADDING];
     CHECKSUM_T header_checksum;
 } BlockHeader;
 
@@ -59,12 +60,12 @@ BlockHeader *get_block_ptr_offset(OFFSET_T offset) {
 
 
 void *get_payload_ptr(BlockHeader *block) {
-    return (uint8_t *)block + sizeof(BlockHeader) + HEADER_PADDING;
+    return (uint8_t *)block + sizeof(BlockHeader);
 }
 
 
 BlockHeader *get_block_ptr_payload(void *payload_ptr) {
-    return (BlockHeader *)((uint8_t *)payload_ptr - HEADER_PADDING - sizeof(BlockHeader));
+    return (BlockHeader *)((uint8_t *)payload_ptr - sizeof(BlockHeader));
 }
 
 
@@ -84,12 +85,12 @@ bool within_heap(uint8_t *ptr) {
 
 
 SIZE_T calculate_minimum_heap_size() {
-    return sizeof(BlockHeader) + HEADER_PADDING + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
+    return sizeof(BlockHeader) + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
 }
 
 
 SIZE_T calculate_minimum_block_size() {
-    return sizeof(BlockHeader) + HEADER_PADDING + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
+    return sizeof(BlockHeader) + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
 }
 
 
@@ -169,7 +170,7 @@ bool validate_block_metadata(BlockHeader *block) {
 bool validate_block_payload(BlockHeader *block) {
     if (block->payload_checksum == 0) return true;
 
-    size_t data_length = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    size_t data_length = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
     CHECKSUM_T calculated_payload_checksum = crc32((const void *)get_payload_ptr(block), data_length);
     if (calculated_payload_checksum != block->payload_checksum) return false;
 
@@ -178,7 +179,7 @@ bool validate_block_payload(BlockHeader *block) {
 
 
 SIZE_T calculate_aligned_block_size(SIZE_T payload_size) {
-    SIZE_T unaligned_size = sizeof(BlockHeader) + HEADER_PADDING + payload_size + sizeof(BlockFooter);
+    SIZE_T unaligned_size = sizeof(BlockHeader) + payload_size + sizeof(BlockFooter);
     SIZE_T aligned_size = align_up(unaligned_size, ALIGN);
     return aligned_size >= calculate_minimum_block_size() ? aligned_size : calculate_minimum_block_size();
 }
@@ -257,7 +258,7 @@ void quarantine_block(BlockHeader *block, SIZE_T size) {
     // Poison payload
 
     uint8_t *payload_ptr = get_payload_ptr(block);
-    SIZE_T payload_size = size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    SIZE_T payload_size = size - sizeof(BlockHeader) - sizeof(BlockFooter);
     memset(payload_ptr, 0xCA, payload_size);
 
     BlockFooter *footer = get_footer_ptr(block);
@@ -342,7 +343,7 @@ void *mm_malloc(size_t size) {
     uint8_t *payload_ptr = get_payload_ptr(current_block);
 
     current_block->flags = BLOCK_ALLOCATED;
-    SIZE_T payload_size = current_block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    SIZE_T payload_size = current_block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
     memset(payload_ptr, 0, payload_size);
     current_block->payload_checksum = crc32((const void *)get_payload_ptr(current_block), payload_size);
     size_t data_length = offsetof(BlockHeader, header_checksum);
@@ -397,7 +398,7 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
     }
     else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) return -1;
 
-    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
     if (offset >= payload_size) return 0;
 
     SIZE_T bytes_available = payload_size - offset;
@@ -424,7 +425,7 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
     }
     else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) return -1;
 
-    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
     if (offset >= payload_size) return 0;
 
     SIZE_T bytes_available = payload_size - offset;
@@ -496,6 +497,6 @@ void mm_free(void *ptr) {
 
     coalesce_blocks(block);
 
-    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter) - HEADER_PADDING;
+    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
     memset((uint8_t *)ptr, 0, payload_size);
 }
