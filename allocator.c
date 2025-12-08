@@ -74,8 +74,8 @@ BlockFooter *get_footer_ptr(BlockHeader *block) {
 }
 
 
-OFFSET_T calculate_block_offset(BlockHeader *block) {
-    return (OFFSET_T)((uint8_t *)block - s_heap);
+OFFSET_T calculate_offset(uint8_t *ptr) {
+    return (OFFSET_T)(ptr - s_heap);
 }
 
 
@@ -310,6 +310,15 @@ bool repair_block(BlockHeader *block, SIZE_T size) {
 }
 
 
+void write_pattern(uint8_t *ptr, SIZE_T size) {
+    OFFSET_T start = calculate_offset(ptr);
+
+    for (size_t i = start; i < start + size; i++) {
+        ptr[i] = s_unused_pattern[i % 5];
+    }
+}
+
+
 void *mm_malloc(size_t size) {
     SIZE_T aligned_size = calculate_aligned_block_size(size);
 
@@ -373,7 +382,7 @@ BlockBounds find_corrupted_bounds(uint8_t *ptr) {
 
     SIZE_T block_size;
     if (next_block == NULL) {
-        block_size = s_heap_size - calculate_block_offset(block);
+        block_size = s_heap_size - calculate_offset((uint8_t *)block);
     }
     else {
         block_size = (uint8_t *)next_block - (uint8_t *)block;
