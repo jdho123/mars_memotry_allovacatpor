@@ -320,9 +320,12 @@ void *mm_malloc(size_t size) {
             if (next_block == NULL) return NULL;
 
             SIZE_T block_size = (uint8_t *)next_block - (uint8_t *)current_block;
-            quarantine_block(current_block, block_size);
-            current_block = next_block;
-            continue;
+
+            if (!repair_block(current_block, block_size)) {
+                quarantine_block(current_block, block_size);
+                current_block = next_block;
+                continue;
+            }
         }
 
         if (current_block->flags == BLOCK_FREE && current_block->block_size >= aligned_size) {
@@ -387,9 +390,10 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
     if (!validate_block_metadata(block)) {
         BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
-        quarantine_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size);
-
-        return -1;
+        if (!repair_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size)) {
+            quarantine_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size);
+            return -1;
+        }
     }
     else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) return -1;
 
@@ -413,9 +417,10 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
     if (!validate_block_metadata(block)) {
         BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
-        quarantine_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size);
-
-        return -1;
+        if (!repair_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size)) {
+            quarantine_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size);
+            return -1;
+        }
     }
     else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) return -1;
 
