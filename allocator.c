@@ -511,3 +511,83 @@ void mm_free(void *ptr) {
     SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
     write_pattern((uint8_t *)block + sizeof(BlockHeader), payload_size);
 }
+
+
+void mm_heap_stats(void) {
+    printf("Heap Statistics:\n");
+    printf("  Heap Start: %p\n", (void *)s_heap);
+    printf("  Heap Size: %zu bytes\n", s_heap_size);
+    printf("  ALIGN: %u bytes\n", ALIGN);
+    printf("  BlockHeader size: %zu bytes\n", sizeof(BlockHeader));
+    printf("  BlockFooter size: %zu bytes\n", sizeof(BlockFooter));
+    printf("  HEADER_PADDING: %u bytes\n", HEADER_PADDING);
+    printf("  MIN_PAYLOAD_SIZE: %u bytes\n", MIN_PAYLOAD_SIZE);
+    printf("  Minimum Block Size: %u bytes\n", calculate_minimum_block_size());
+
+    BlockHeader *current_block = (BlockHeader *)s_heap;
+    int block_count = 0;
+    size_t allocated_bytes = 0;
+    size_t free_bytes = 0;
+    size_t quarantined_bytes = 0;
+    size_t corrupted_bytes = 0;
+
+    while (within_heap((uint8_t *)current_block)) {
+        block_count++;
+        printf("Block %d at offset %u:\n", block_count, calculate_offset((uint8_t *)current_block));
+        printf("  Address: %p\n", (void *)current_block);
+
+        bool metadata_valid = validate_block_metadata(current_block);
+        bool payload_valid = validate_block_payload(current_block);
+
+        if (!metadata_valid) {
+            printf("  Status: CORRUPTED (Metadata Invalid)\n");
+            corrupted_bytes += current_block->block_size;
+            BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)current_block);
+            printf("  Corrupted Block Bounds: Start %p, Size %u\n", corrupted_bounds.start, corrupted_bounds.size);
+            current_block = (BlockHeader *)((uint8_t *)corrupted_bounds.start + corrupted_bounds.size);
+            continue;
+        }
+
+        printf("  Magic: 0x%X (Expected 0x%X)\n", current_block->magic, HEADER_MAGIC);
+        printf("  Block Size: %u bytes\n", current_block->block_size);
+        printf("  Flags: 0x%X (", current_block->flags);
+        if (current_block->flags == BLOCK_FREE) {
+            printf("FREE)\n");
+            free_bytes += current_block->block_size;
+        } else if (current_block->flags == BLOCK_ALLOCATED) {
+            printf("ALLOCATED)\n");
+            allocated_bytes += current_block->block_size;
+        } else if (current_block->flags == BLOCK_QUARANTINE) {
+            printf("QUARANTINE)\n");
+            quarantined_bytes += current_block->block_size;
+        } else {
+            printf("UNKNOWN)\n");
+        }
+        printf("  Payload Checksum: 0x%X\n", current_block->payload_checksum);
+        printf("  Header Checksum: 0x%X\n", current_block->header_checksum);
+
+        BlockFooter *footer = get_footer_ptr(current_block);
+        printf("  Footer Address: %p\n", (void *)footer);
+        printf("  Footer Block Size: %u bytes\n", footer->block_size);
+        printf("  Footer Flags: 0x%X\n", footer->flags);
+        printf("  Footer Checksum: 0x%X\n", footer->footer_checksum);
+
+        if (!payload_valid) {
+            printf("  Status: CORRUPTED (Payload Invalid)\n");
+            corrupted_bytes += current_block->block_size;
+        } else {
+            printf("  Status: OK\n");
+        }
+
+        current_block = (BlockHeader *)((uint8_t *)current_block + current_block->block_size);
+    }
+
+    printf("Summary:\n");
+    printf("  Total Blocks: %d\n", block_count);
+    printf("  Total Allocated Bytes: %zu\n", allocated_bytes);
+    printf("  Total Free Bytes: %zu\n", free_bytes);
+    printf("  Total Quarantined Bytes: %zu\n", quarantined_bytes);
+    printf("  Total Corrupted Bytes: %zu\n", corrupted_bytes);
+    printf("  Total Heap Usage: %zu bytes\n", allocated_bytes + free_bytes + quarantined_bytes + corrupted_bytes);
+    printf("  Heap Utilization: %.2f%%\n", (double)(allocated_bytes + quarantined_bytes) / s_heap_size * 100.0);
+}
