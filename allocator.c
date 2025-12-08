@@ -35,6 +35,11 @@ typedef struct {
     CHECKSUM_T footer_checksum;
 } BlockFooter;
 
+typedef struct {
+    void* start;
+    SIZE_T size;
+} BlockBounds;
+
 
 static uint8_t* s_heap = NULL;
 static size_t s_heap_size = 0;
@@ -313,30 +318,39 @@ void *mm_malloc(size_t size) {
 }
 
 
+BlockBounds find_corrupted_bounds(uint8_t *ptr) {
+    BlockHeader *next_block = scan_next_block(ptr, false);
+    BlockHeader *prev_block = scan_next_block(ptr, true);
+
+    void *block;
+    if (prev_block == NULL) {
+        block = (void *)s_heap;
+    }
+    else {
+        block = (void *)((uint8_t *)prev_block + prev_block->block_size);
+    }
+
+    SIZE_T block_size;
+    if (next_block == NULL) {
+        block_size = s_heap_size - calculate_block_offset(block);
+    }
+    else {
+        block_size = (uint8_t *)next_block - (uint8_t *)block;
+    }
+
+    return (BlockBounds){block, block_size};
+}
+
+
 int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
     if (ptr == NULL || !within_heap((uint8_t *)ptr) || buf == NULL) return -1;
 
     BlockHeader *block = get_block_ptr_payload(ptr);
 
     if (!validate_block_metadata(block)) {
-        BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
-        BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
+        BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
-        if (prev_block == NULL) {
-            block = (BlockHeader *)s_heap;
-        }
-        else {
-            block = (BlockHeader *)((uint8_t *)prev_block + prev_block->block_size);
-        }
-
-        SIZE_T block_size;
-        if (next_block == NULL) {
-            block_size = s_heap_size - calculate_block_offset(block);
-        }
-        else {
-            block_size = (uint8_t *)next_block - (uint8_t *)block;
-        }
-        quarantine_block(block, block_size);
+        quarantine_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size);
 
         return -1;
     }
@@ -360,24 +374,9 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
     BlockHeader *block = get_block_ptr_payload(ptr);
 
     if (!validate_block_metadata(block)) {
-        BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
-        BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
+        BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
-        if (prev_block == NULL) {
-            block = (BlockHeader *)s_heap;
-        }
-        else {
-            block = (BlockHeader *)((uint8_t *)prev_block + prev_block->block_size);
-        }
-
-        SIZE_T block_size;
-        if (next_block == NULL) {
-            block_size = s_heap_size - calculate_block_offset(block);
-        }
-        else {
-            block_size = (uint8_t *)next_block - (uint8_t *)block;
-        }
-        quarantine_block(block, block_size);
+        quarantine_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size);
 
         return -1;
     }
@@ -438,25 +437,9 @@ void mm_free(void *ptr) {
     BlockHeader *block = get_block_ptr_payload(ptr);
 
     if (!validate_block_metadata(block)) {
-        BlockHeader *next_block = scan_next_block((uint8_t *)block, false);
-        BlockHeader *prev_block = scan_next_block((uint8_t *)block, true);
+        BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
-        if (prev_block == NULL) {
-            block = (BlockHeader *)s_heap;
-        }
-        else {
-            block = (BlockHeader *)((uint8_t *)prev_block + prev_block->block_size);
-        }
-
-        SIZE_T block_size;
-        if (next_block == NULL) {
-            block_size = s_heap_size - calculate_block_offset(block);
-        }
-        else {
-            block_size = (uint8_t *)next_block - (uint8_t *)block;
-        }
-
-        create_block(block, block_size);
+        create_block(corrupted_bounds.start, corrupted_bounds.size);
     }
 
     block->flags = BLOCK_FREE;
