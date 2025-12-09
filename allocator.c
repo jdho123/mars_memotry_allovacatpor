@@ -13,7 +13,7 @@ typedef uint32_t CHECKSUM_T;
 #define ALIGN (SIZE_T)40
 #define GLOBAL_MAGIC (uint32_t)0xCAFEBABE
 #define HEADER_MAGIC (uint32_t)0xDEADBEEF
-#define HEADER_PADDING (SIZE_T)20
+#define HEADER_PADDING (SIZE_T)16
 #define MIN_PAYLOAD_SIZE (SIZE_T)28
 
 #define BLOCK_FREE (uint8_t)0x01
@@ -25,6 +25,7 @@ typedef struct {
     uint32_t magic;
     SIZE_T block_size;
     uint8_t flags;
+    uint32_t payload_size;
     CHECKSUM_T payload_checksum;
     uint8_t padding[HEADER_PADDING];
     CHECKSUM_T header_checksum;
@@ -101,6 +102,7 @@ void create_block(void *block, SIZE_T size) {
     block_header->magic = HEADER_MAGIC;
     block_header->block_size = size;
     block_header->flags = BLOCK_FREE;
+    block_header->payload_size = 0;
     block_header->payload_checksum = 0;
     size_t data_length = offsetof(BlockHeader, header_checksum);
     block_header->header_checksum = crc32((const void *)block_header, data_length);
@@ -170,8 +172,7 @@ bool validate_block_metadata(BlockHeader *block) {
 bool validate_block_payload(BlockHeader *block) {
     if (block->payload_checksum == 0) return true;
 
-    size_t data_length = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
-    CHECKSUM_T calculated_payload_checksum = crc32((const void *)get_payload_ptr(block), data_length);
+    CHECKSUM_T calculated_payload_checksum = crc32((const void *)get_payload_ptr(block), block->payload_size);
     if (calculated_payload_checksum != block->payload_checksum) return false;
 
     return true;
@@ -324,9 +325,14 @@ void *mm_malloc(size_t size) {
     while (within_heap((uint8_t *)current_block)) {
         if (!validate_block_metadata(current_block)) {
             BlockHeader *next_block = scan_next_block((uint8_t *)current_block, false);
-            if (next_block == NULL) return NULL;
 
-            SIZE_T block_size = (uint8_t *)next_block - (uint8_t *)current_block;
+            SIZE_T block_size;
+            if (next_block == NULL) {
+                block_size = s_heap_size - calculate_offset((uint8_t *)current_block);
+            }
+            else {
+                block_size = (uint8_t *)next_block - (uint8_t *)current_block;
+            }
 
             if (!repair_block(current_block, block_size)) {
                 quarantine_block(current_block, block_size);
@@ -349,9 +355,9 @@ void *mm_malloc(size_t size) {
     uint8_t *payload_ptr = get_payload_ptr(current_block);
 
     current_block->flags = BLOCK_ALLOCATED;
-    SIZE_T payload_size = current_block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
-    memset(payload_ptr, 0, payload_size);
-    current_block->payload_checksum = crc32((const void *)get_payload_ptr(current_block), payload_size);
+    current_block->payload_size = size;
+    memset(payload_ptr, 0, current_block->payload_size);
+    current_block->payload_checksum = crc32((const void *)get_payload_ptr(current_block), current_block->payload_size);
     size_t data_length = offsetof(BlockHeader, header_checksum);
     current_block->header_checksum = crc32((const void *)current_block, data_length);
 
@@ -406,15 +412,14 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
     }
     else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) return -1;
 
-    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
-    if (offset >= payload_size) return 0;
+    if (offset >= block->payload_size) return 0;
 
-    SIZE_T bytes_available = payload_size - offset;
-    SIZE_T bytes_to_read = (len > bytes_available) ? bytes_available : len;
+    SIZE_T bytes_available = block->payload_size - offset;
+    if (len > bytes_available || offset + len != block->payload_size) return -1;
 
-    memcpy(buf, (uint8_t *)ptr + offset, bytes_to_read);
+    memcpy(buf, (uint8_t *)ptr + offset, len);
 
-    return (int)bytes_to_read;
+    return (int)len;
 }
 
 
@@ -435,19 +440,18 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
     }
     else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) return -1;
 
-    SIZE_T payload_size = block->block_size - sizeof(BlockHeader) - sizeof(BlockFooter);
-    if (offset >= payload_size) return 0;
+    if (offset >= block->payload_size) return 0;
 
-    SIZE_T bytes_available = payload_size - offset;
-    SIZE_T bytes_to_write = (len > bytes_available) ? bytes_available : len;
+    SIZE_T bytes_available = block->payload_size - offset;
+    if (len > bytes_available || offset + len != block->payload_size) return -1;
 
-    memcpy((uint8_t *)ptr + offset, src, bytes_to_write);
+    memcpy((uint8_t *)ptr + offset, src, len);
 
-    block->payload_checksum = crc32((const void *)ptr, payload_size);
+    block->payload_checksum = crc32((const void *)ptr, block->payload_size);
     size_t data_length = offsetof(BlockHeader, header_checksum);
     block->header_checksum = crc32((const void *)block, data_length);
 
-    return (int)bytes_to_write;
+    return (int)len;
 }
 
 
@@ -501,6 +505,7 @@ void mm_free(void *ptr) {
     else if (block->flags == BLOCK_FREE) return;
 
     block->flags = BLOCK_FREE;
+    block->payload_size = 0;
     block->payload_checksum = 0;
     size_t data_length = offsetof(BlockHeader, header_checksum);
     block->header_checksum = crc32((const void *)block, data_length);
