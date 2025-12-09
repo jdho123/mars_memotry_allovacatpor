@@ -498,6 +498,7 @@ void mm_free(void *ptr) {
 
         create_block(corrupted_bounds.start, corrupted_bounds.size);
     }
+    else if (block->flags == BLOCK_FREE) return;
 
     block->flags = BLOCK_FREE;
     block->payload_checksum = 0;
