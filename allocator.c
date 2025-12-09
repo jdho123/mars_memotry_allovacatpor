@@ -397,6 +397,8 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
     if (!validate_block_metadata(block)) {
         BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
+        if (corrupted_bounds.size == 0) return -1;
+
         if (!repair_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size)) {
             quarantine_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size);
             return -1;
@@ -423,6 +425,8 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
 
     if (!validate_block_metadata(block)) {
         BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
+
+        if (corrupted_bounds.size == 0) return -1;
 
         if (!repair_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size)) {
             quarantine_block((BlockHeader *)corrupted_bounds.start, corrupted_bounds.size);
@@ -489,6 +493,8 @@ void mm_free(void *ptr) {
 
     if (!validate_block_metadata(block)) {
         BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
+
+        if (corrupted_bounds.size == 0) return;
 
         create_block(corrupted_bounds.start, corrupted_bounds.size);
     }
