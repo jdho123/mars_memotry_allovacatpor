@@ -394,7 +394,7 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
 
     BlockHeader *block = get_block_ptr_payload(ptr);
 
-    if (!validate_block_metadata(block)) {
+    if (!validate_block_metadata(block) || !within_heap((uint8_t *)block + block->block_size)) {
         BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
         if (corrupted_bounds.size == 0) return -1;
@@ -423,7 +423,7 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
 
     BlockHeader *block = get_block_ptr_payload(ptr);
 
-    if (!validate_block_metadata(block)) {
+    if (!validate_block_metadata(block) || !within_heap((uint8_t *)block + block->block_size)) {
         BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
         if (corrupted_bounds.size == 0) return -1;
@@ -453,7 +453,7 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
 
 BlockHeader *coalesce_blocks(BlockHeader *block) {
     BlockHeader *next_block = (BlockHeader *)((uint8_t *)block + block->block_size);
-    if (validate_block_header(next_block) && next_block->flags == BLOCK_FREE) {
+    if (within_heap((uint8_t *)next_block) &&validate_block_header(next_block) && next_block->flags == BLOCK_FREE) {
         block->block_size += next_block->block_size;
         size_t data_length = offsetof(BlockHeader, header_checksum);
         block->header_checksum = crc32((const void *)block, data_length);
@@ -466,7 +466,7 @@ BlockHeader *coalesce_blocks(BlockHeader *block) {
     }
 
     BlockFooter *prev_footer = (BlockFooter *)((uint8_t *)block - sizeof(BlockFooter));
-    if (validate_block_footer(prev_footer) && prev_footer->flags == BLOCK_FREE) {
+    if (within_heap((uint8_t *)prev_footer) && validate_block_footer(prev_footer) && prev_footer->flags == BLOCK_FREE) {
         BlockHeader *prev_block = (BlockHeader *)((uint8_t *)block - prev_footer->block_size);
         if (validate_block_metadata(prev_block)) {
             prev_block->block_size += block->block_size;
