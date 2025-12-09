@@ -254,12 +254,9 @@ BlockHeader *scan_next_block(uint8_t *ptr, bool reverse) {
 
 
 void quarantine_block(BlockHeader *block, SIZE_T size) {
-    printf("quarantined");
-    // Poison payload
-
     uint8_t *payload_ptr = get_payload_ptr(block);
     SIZE_T payload_size = size - sizeof(BlockHeader) - sizeof(BlockFooter);
-    memset(payload_ptr, 0xCA, payload_size);
+    write_pattern(payload_ptr, payload_size);
 
     BlockFooter *footer = get_footer_ptr(block);
     footer->block_size = size;
