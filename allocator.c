@@ -24,7 +24,8 @@ typedef struct {
   uint32_t magic;
   SIZE_T block_size;
   uint8_t flags;
-  uint32_t payload_size;
+  uint32_t payload_size;  // Required as dynamic padding after payload makes
+                          // this impossible to calculate from block_size
   CHECKSUM_T payload_checksum;
   uint8_t padding[HEADER_PADDING];
   CHECKSUM_T header_checksum;
@@ -41,47 +42,48 @@ typedef struct {
   SIZE_T size;
 } BlockBounds;
 
+// Static constants
 static uint8_t *s_heap = NULL;
 static size_t s_heap_size = 0;
 static uint8_t s_unused_pattern[5];
 
+// Finds next memory address aligned to ALIGN
 SIZE_T align_up(SIZE_T x, SIZE_T align) {
   SIZE_T r = x % align;
   if (r == 0) return x;
   return x + (align - r);
 }
 
-BlockHeader *get_block_ptr_offset(OFFSET_T offset) {
-  return (BlockHeader *)(s_heap + offset);
-}
-
+// Finds payload ptr from BlockHeader ptr
 void *get_payload_ptr(BlockHeader *block) {
   return (uint8_t *)block + sizeof(BlockHeader);
 }
 
+// Finds BlockHeader ptr from payload ptr
 BlockHeader *get_block_ptr_payload(void *payload_ptr) {
   return (BlockHeader *)((uint8_t *)payload_ptr - sizeof(BlockHeader));
 }
 
+// Finds BlockFooter ptr from BlockHeader ptr
 BlockFooter *get_footer_ptr(BlockHeader *block) {
   return (BlockFooter *)((uint8_t *)block + block->block_size -
                          sizeof(BlockFooter));
 }
 
+// Finds offset of a ptr within the heap
 OFFSET_T calculate_offset(uint8_t *ptr) { return (OFFSET_T)(ptr - s_heap); }
 
+// Datermines whether a ptr is within the heap
 bool within_heap(uint8_t *ptr) {
   return ptr >= s_heap && ptr < (s_heap + s_heap_size);
 }
 
-SIZE_T calculate_minimum_heap_size() {
-  return sizeof(BlockHeader) + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
-}
-
+// Calculates the minimum size of a block
 SIZE_T calculate_minimum_block_size() {
   return sizeof(BlockHeader) + MIN_PAYLOAD_SIZE + sizeof(BlockFooter);
 }
 
+// Creates a new block of a given size at the given block ptr
 void create_block(void *block, SIZE_T size) {
   BlockHeader *block_header = (BlockHeader *)block;
   memset(block_header, 0, sizeof(BlockHeader));
@@ -104,21 +106,23 @@ void create_block(void *block, SIZE_T size) {
   footer->footer_checksum = crc32((const void *)footer, data_length);
 }
 
+// Initialize a heap with a single block
 int mm_init(uint8_t *heap, size_t heap_size) {
-  if (heap == NULL || heap_size < calculate_minimum_heap_size()) {
+  if (heap == NULL || heap_size < calculate_minimum_block_size()) {
     return -1;
   }
 
   s_heap = heap;
   s_heap_size = heap_size;
 
-  memcpy(s_unused_pattern, heap, 5);
+  memcpy(s_unused_pattern, heap, 5);  // Copy pattern for unused memory
 
-  create_block((void *)heap, s_heap_size);
+  create_block((void *)heap, s_heap_size);  // Create first block
 
   return 0;
 }
 
+// Check that header data is valid and uncorrupted
 bool validate_block_header(BlockHeader *block) {
   if (block->magic != HEADER_MAGIC) return false;
 
@@ -130,6 +134,7 @@ bool validate_block_header(BlockHeader *block) {
   return true;
 }
 
+// Check that footer data is valid and uncorrupted
 bool validate_block_footer(BlockFooter *footer) {
   size_t data_length = offsetof(BlockFooter, footer_checksum);
   CHECKSUM_T calculated_footer_checksum =
@@ -139,11 +144,13 @@ bool validate_block_footer(BlockFooter *footer) {
   return true;
 }
 
+// Check that header and footer data agree
 bool is_metadata_consistent(BlockHeader *block, BlockFooter *footer) {
   return block->block_size == footer->block_size &&
          block->flags == footer->flags;
 }
 
+// Checks that all of a blocks metadata is uncorrupt and consistent
 bool validate_block_metadata(BlockHeader *block) {
   if (!validate_block_header(block)) return false;
 
@@ -154,6 +161,7 @@ bool validate_block_metadata(BlockHeader *block) {
   return is_metadata_consistent(block, footer);
 }
 
+// Checks that payload data is uncorrupt
 bool validate_block_payload(BlockHeader *block) {
   if (block->payload_checksum == 0) return true;
 
@@ -164,6 +172,7 @@ bool validate_block_payload(BlockHeader *block) {
   return true;
 }
 
+// Calculates the size of a fully aligned block of a given payload_size
 SIZE_T calculate_aligned_block_size(SIZE_T payload_size) {
   SIZE_T unaligned_size =
       sizeof(BlockHeader) + payload_size + sizeof(BlockFooter);
@@ -173,6 +182,7 @@ SIZE_T calculate_aligned_block_size(SIZE_T payload_size) {
              : calculate_minimum_block_size();
 }
 
+// Divides a block into two blocks
 bool split_block(BlockHeader *block, SIZE_T size) {
   BlockFooter *second_footer = get_footer_ptr(block);
 
@@ -225,6 +235,7 @@ bool split_block(BlockHeader *block, SIZE_T size) {
   return true;
 }
 
+// Scans forward or backward for the next valid block or the heap edge
 BlockHeader *scan_next_block(uint8_t *ptr, bool reverse) {
   while (within_heap(ptr)) {
     BlockHeader *block = (BlockHeader *)ptr;
@@ -239,6 +250,7 @@ BlockHeader *scan_next_block(uint8_t *ptr, bool reverse) {
   return NULL;
 }
 
+// Marks a block as quarantined
 void quarantine_block(BlockHeader *block, SIZE_T size) {
   uint8_t *payload_ptr = get_payload_ptr(block);
   SIZE_T payload_size = size - sizeof(BlockHeader) - sizeof(BlockFooter);
@@ -258,6 +270,7 @@ void quarantine_block(BlockHeader *block, SIZE_T size) {
   block->header_checksum = crc32((const void *)block, data_length);
 }
 
+// Attempts to repair a corrupted block
 bool repair_block(BlockHeader *block, SIZE_T size) {
   BlockFooter *footer =
       (BlockFooter *)((uint8_t *)block + size - sizeof(BlockFooter));
@@ -290,6 +303,7 @@ bool repair_block(BlockHeader *block, SIZE_T size) {
   return is_metadata_consistent(block, footer);
 }
 
+// Writes repeating 5 byte pattern to the given memory region
 void write_pattern(uint8_t *ptr, SIZE_T size) {
   OFFSET_T start = calculate_offset(ptr);
 
@@ -303,18 +317,20 @@ void *mm_malloc(size_t size) {
 
   BlockHeader *current_block = (BlockHeader *)s_heap;
 
+  // Iterate until the next valid free block is found or return NULL
   while (within_heap((uint8_t *)current_block)) {
     if (!validate_block_metadata(current_block)) {
       BlockHeader *next_block =
           scan_next_block((uint8_t *)current_block, false);
 
       SIZE_T block_size;
-      if (next_block == NULL) {
+      if (next_block == NULL) {  // Block is at the end of the heap
         block_size = s_heap_size - calculate_offset((uint8_t *)current_block);
       } else {
         block_size = (uint8_t *)next_block - (uint8_t *)current_block;
       }
 
+      // Attempt to repair block and if not quarantine
       if (!repair_block(current_block, block_size)) {
         quarantine_block(current_block, block_size);
         current_block = next_block;
@@ -356,6 +372,7 @@ void *mm_malloc(size_t size) {
   return payload_ptr;
 }
 
+// Given a pointer within a corrupt region, finds the bounds of this region
 BlockBounds find_corrupted_bounds(uint8_t *ptr) {
   BlockHeader *next_block = scan_next_block(ptr, false);
   BlockHeader *prev_block = scan_next_block(ptr, true);
@@ -441,6 +458,7 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
   return (int)len;
 }
 
+// Joins adjecent free blocks into a larger single free block
 BlockHeader *coalesce_blocks(BlockHeader *block) {
   BlockHeader *next_block =
       (BlockHeader *)((uint8_t *)block + block->block_size);
