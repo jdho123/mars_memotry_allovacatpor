@@ -423,8 +423,10 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
                        corrupted_bounds.size);
       return -1;
     }
-  } else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block))
+  } else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) {
+    quarantine_block(block, block->block_size);
     return -1;
+  }
 
   if (offset >= block->payload_size) return 0;
 
@@ -453,8 +455,10 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
                        corrupted_bounds.size);
       return -1;
     }
-  } else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block))
+  } else if (block->flags != BLOCK_ALLOCATED || !validate_block_payload(block)) {
+    quarantine_block(block, block->block_size);
     return -1;
+  }
 
   if (offset >= block->payload_size) return 0;
 
