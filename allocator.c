@@ -14,7 +14,7 @@ typedef uint32_t CHECKSUM_T;
 #define GLOBAL_MAGIC (uint32_t)0xCAFEBABE
 #define HEADER_MAGIC (uint32_t)0xDEADBEEF
 #define HEADER_PADDING (SIZE_T)16
-#define MIN_PAYLOAD_SIZE (SIZE_T)28
+#define MIN_PAYLOAD_SIZE (SIZE_T)24
 
 #define BLOCK_FREE (uint8_t)0x01
 #define BLOCK_ALLOCATED (uint8_t)0x02
@@ -33,6 +33,7 @@ typedef struct {
 
 typedef struct {
   SIZE_T block_size;
+  SIZE_T payload_size;
   uint8_t flags;
   CHECKSUM_T footer_checksum;
 } BlockFooter;
@@ -101,6 +102,7 @@ void create_block(void *block, SIZE_T size) {
   memset(footer, 0, sizeof(BlockFooter));
 
   footer->block_size = size;
+  footer->payload_size = 0;
   footer->flags = BLOCK_FREE;
   data_length = offsetof(BlockFooter, footer_checksum);
   footer->footer_checksum = crc32((const void *)footer, data_length);
@@ -147,7 +149,8 @@ bool validate_block_footer(BlockFooter *footer) {
 // Check that header and footer data agree
 bool is_metadata_consistent(BlockHeader *block, BlockFooter *footer) {
   return block->block_size == footer->block_size &&
-         block->flags == footer->flags;
+         block->flags == footer->flags &&
+         block->payload_size == footer->payload_size;
 }
 
 // Checks that all of a blocks metadata is uncorrupt and consistent
@@ -197,6 +200,7 @@ bool split_block(BlockHeader *block, SIZE_T size) {
 
   BlockHeader second_header = {.magic = HEADER_MAGIC,
                                .block_size = second_size,
+                               .payload_size = 0,
                                .flags = BLOCK_FREE,
                                .payload_checksum = 0,
                                .header_checksum = 0};
@@ -210,7 +214,11 @@ bool split_block(BlockHeader *block, SIZE_T size) {
   // Create first footer
 
   BlockFooter first_footer = {
-      .block_size = first_size, .flags = BLOCK_FREE, .footer_checksum = 0};
+      .block_size = first_size,
+      .payload_size = 0,
+      .flags = BLOCK_FREE, 
+      .footer_checksum = 0
+    };
 
   data_length = offsetof(BlockFooter, footer_checksum);
   first_footer.footer_checksum =
@@ -227,6 +235,7 @@ bool split_block(BlockHeader *block, SIZE_T size) {
   // Update second footer
 
   second_footer->block_size = second_size;
+  second_footer->payload_size = 0;
   second_footer->flags = BLOCK_FREE;
   data_length = offsetof(BlockFooter, footer_checksum);
   second_footer->footer_checksum =
@@ -281,6 +290,7 @@ bool repair_block(BlockHeader *block, SIZE_T size) {
   if (header_valid && !footer_valid) {
     memset((void *)footer, 0, sizeof(BlockFooter));
     footer->block_size = block->block_size;
+    footer->payload_size = block->payload_size;
     footer->flags = block->flags;
     size_t data_length = offsetof(BlockFooter, footer_checksum);
     footer->footer_checksum = crc32((const void *)footer, data_length);
@@ -290,6 +300,7 @@ bool repair_block(BlockHeader *block, SIZE_T size) {
     memset((void *)block, 0, sizeof(BlockHeader));
     block->magic = HEADER_MAGIC;
     block->block_size = footer->block_size;
+    block->payload_size = footer->payload_size;
     block->flags = footer->flags;
     block->payload_checksum = payload_checksum;
     size_t data_length = offsetof(BlockHeader, header_checksum);
@@ -365,6 +376,7 @@ void *mm_malloc(size_t size) {
 
   BlockFooter *footer = get_footer_ptr(current_block);
   footer->block_size = current_block->block_size;
+  footer->payload_size = size;
   footer->flags = BLOCK_ALLOCATED;
   data_length = offsetof(BlockFooter, footer_checksum);
   footer->footer_checksum = crc32((const void *)footer, data_length);
@@ -520,6 +532,7 @@ void mm_free(void *ptr) {
   block->header_checksum = crc32((const void *)block, data_length);
 
   BlockFooter *footer = get_footer_ptr(block);
+  footer->payload_size = 0;
   footer->flags = BLOCK_FREE;
   data_length = offsetof(BlockFooter, footer_checksum);
   footer->footer_checksum = crc32((const void *)footer, data_length);
@@ -592,6 +605,7 @@ void mm_heap_stats(void) {
     BlockFooter *footer = get_footer_ptr(current_block);
     printf("  Footer Address: %p\n", (void *)footer);
     printf("  Footer Block Size: %u bytes\n", footer->block_size);
+    printf("  Footer Payload Size: %u bytes\n", footer->payload_size);
     printf("  Footer Flags: 0x%X\n", footer->flags);
     printf("  Footer Checksum: 0x%X\n", footer->footer_checksum);
 
