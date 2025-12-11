@@ -13,8 +13,8 @@ typedef uint32_t CHECKSUM_T;
 #define ALIGN (SIZE_T)40
 #define GLOBAL_MAGIC (uint32_t)0xCAFEBABE
 #define HEADER_MAGIC (uint32_t)0xDEADBEEF
-#define HEADER_PADDING (SIZE_T)16
-#define MIN_PAYLOAD_SIZE (SIZE_T)24
+#define INITIAL_PADDING (SIZE_T)16
+#define MIN_PAYLOAD_SIZE (SIZE_T)16
 
 #define BLOCK_FREE (uint8_t)0x01
 #define BLOCK_ALLOCATED (uint8_t)0x02
@@ -27,7 +27,6 @@ typedef struct {
   uint32_t payload_size;  // Required as dynamic padding after payload makes
                           // this impossible to calculate from block_size
   CHECKSUM_T payload_checksum;
-  uint8_t padding[HEADER_PADDING];
   CHECKSUM_T header_checksum;
 } BlockHeader;
 
@@ -72,7 +71,7 @@ BlockFooter *get_footer_ptr(BlockHeader *block) {
 }
 
 // Finds offset of a ptr within the heap
-OFFSET_T calculate_offset(uint8_t *ptr) { return (OFFSET_T)(ptr - s_heap); }
+OFFSET_T calculate_offset(uint8_t *ptr) { return (OFFSET_T)(ptr - s_heap + INITIAL_PADDING); }
 
 // Datermines whether a ptr is within the heap
 bool within_heap(uint8_t *ptr) {
@@ -114,12 +113,12 @@ int mm_init(uint8_t *heap, size_t heap_size) {
     return -1;
   }
 
-  s_heap = heap;
-  s_heap_size = heap_size;
+  s_heap = heap + INITIAL_PADDING;
+  s_heap_size = heap_size - INITIAL_PADDING;
 
   memcpy(s_unused_pattern, heap, 5);  // Copy pattern for unused memory
 
-  create_block((void *)heap, s_heap_size);  // Create first block
+  create_block((void *)s_heap, s_heap_size);  // Create first block
 
   return 0;
 }
@@ -177,9 +176,9 @@ bool validate_block_payload(BlockHeader *block) {
 
 // Calculates the size of a fully aligned block of a given payload_size
 SIZE_T calculate_aligned_block_size(SIZE_T payload_size) {
-  SIZE_T unaligned_size =
-      sizeof(BlockHeader) + payload_size + sizeof(BlockFooter);
-  SIZE_T aligned_size = align_up(unaligned_size, ALIGN);
+  SIZE_T aligned_size =
+      sizeof(BlockHeader) + align_up(payload_size, ALIGN) + sizeof(BlockFooter);
+  //SIZE_T aligned_size = align_up(unaligned_size, ALIGN);
   return aligned_size >= calculate_minimum_block_size()
              ? aligned_size
              : calculate_minimum_block_size();
@@ -550,12 +549,12 @@ void mm_free(void *ptr) {
 
 void mm_heap_stats(void) {
   printf("Heap Statistics:\n");
-  printf("  Heap Start: %p\n", (void *)s_heap);
-  printf("  Heap Size: %zu bytes\n", s_heap_size);
+  printf("  Heap Start: %p\n", (void *)s_heap - INITIAL_PADDING);
+  printf("  Heap Size: %zu bytes\n", s_heap_size + INITIAL_PADDING);
+  printf("  Initial Padding: %zu bytes\n", INITIAL_PADDING);
   printf("  ALIGN: %u bytes\n", ALIGN);
   printf("  BlockHeader size: %zu bytes\n", sizeof(BlockHeader));
   printf("  BlockFooter size: %zu bytes\n", sizeof(BlockFooter));
-  printf("  HEADER_PADDING: %u bytes\n", HEADER_PADDING);
   printf("  MIN_PAYLOAD_SIZE: %u bytes\n", MIN_PAYLOAD_SIZE);
   printf("  Minimum Block Size: %u bytes\n", calculate_minimum_block_size());
 
