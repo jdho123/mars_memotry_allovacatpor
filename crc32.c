@@ -22,6 +22,7 @@ uint32_t crc32(const void *data, size_t len) {
     crc = _mm_crc32_u32(crc, val);
   }
 
+  // Account for trailing bytes
   for (; i < len; i++) {
     crc = _mm_crc32_u8(crc, buffer[i]);
   }
@@ -34,6 +35,7 @@ uint32_t crc32(const void *data, size_t len) {
     crc = __crc32w(crc, val);
   }
 
+  // Account for trailing bytes
   for (; i < len; i++) {
     crc = __crc32b(crc, buffer[i]);
   }
