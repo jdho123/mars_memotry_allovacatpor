@@ -121,6 +121,7 @@ void create_block(void *block, SIZE_T size) {
 
 // Initialize a heap with a single block
 int mm_init(uint8_t *heap, size_t heap_size) {
+  // Ignore if heap is not large enough to store a block
   if (heap == NULL ||
       heap_size < calculate_minimum_block_size() + INITIAL_PADDING) {
     return -1;
@@ -189,6 +190,7 @@ bool validate_block_metadata(BlockHeader *block) {
 
 // Checks that payload data is uncorrupt
 bool validate_block_payload(BlockHeader *block) {
+  // Ignore non-allocated blocks
   if (block->payload_checksum == 0) {
     return true;
   }
@@ -207,9 +209,11 @@ SIZE_T calculate_aligned_block_size(SIZE_T payload_size) {
   SIZE_T aligned_size =
       sizeof(BlockHeader) + align_up(payload_size, ALIGN) + sizeof(BlockFooter);
   // SIZE_T aligned_size = align_up(unaligned_size, ALIGN);
-  return aligned_size >= calculate_minimum_block_size()
-             ? aligned_size
-             : calculate_minimum_block_size();
+  if (aligned_size >= calculate_minimum_block_size()) {
+    return aligned_size;
+  } else {
+    return calculate_minimum_block_size();
+  }
 }
 
 // Divides a block into two blocks
@@ -289,6 +293,15 @@ BlockHeader *scan_next_block(uint8_t *ptr, bool reverse) {
   return NULL;  // Return NULL if edges of the heap are found
 }
 
+// Writes repeating 5 byte pattern to the given memory region
+void write_pattern(uint8_t *ptr, SIZE_T size) {
+  OFFSET_T start = calculate_offset(ptr);
+
+  for (size_t i = start; i < start + size; i++) {
+    ptr[i - start] = s_unused_pattern[i % 5];
+  }
+}
+
 // Marks a block as quarantined
 void quarantine_block(BlockHeader *block, SIZE_T size) {
   uint8_t *payload_ptr = get_payload_ptr(block);
@@ -339,23 +352,15 @@ bool repair_block(BlockHeader *block, SIZE_T size) {
     block->header_checksum = crc32((const void *)block, data_length);
 
     // Header repair may still fail
-    if (!validate_block_header(block)) {
+    if (!validate_block_metadata(block)) {
       return false;
     }
   } else if (!header_valid && !footer_valid) {
     return false;  // Not enough information to safely repair
   }
 
+  // Return false if metadata is valid but inconsistent
   return is_metadata_consistent(block, footer);
-}
-
-// Writes repeating 5 byte pattern to the given memory region
-void write_pattern(uint8_t *ptr, SIZE_T size) {
-  OFFSET_T start = calculate_offset(ptr);
-
-  for (size_t i = start; i < start + size; i++) {
-    ptr[i - start] = s_unused_pattern[i % 5];
-  }
 }
 
 void *mm_malloc(size_t size) {
@@ -385,11 +390,13 @@ void *mm_malloc(size_t size) {
       }
     }
 
+    // Valid free block is found
     if (current_block->flags == BLOCK_FREE &&
         current_block->block_size >= aligned_size) {
       break;
     }
 
+    // Jump to the next block
     current_block =
         (BlockHeader *)((uint8_t *)current_block + current_block->block_size);
   }
@@ -454,8 +461,7 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
 
   BlockHeader *block = get_block_ptr_payload(ptr);
 
-  if (!validate_block_metadata(block) ||
-      !within_heap((uint8_t *)block + block->block_size)) {
+  if (!validate_block_metadata(block)) {
     BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
     if (corrupted_bounds.size == 0) {
@@ -468,8 +474,10 @@ int mm_read(void *ptr, size_t offset, void *buf, size_t len) {
                        corrupted_bounds.size);
       return -1;
     }
-  } else if (block->flags != BLOCK_ALLOCATED ||
-             !validate_block_payload(block)) {
+  } else if (block->flags != BLOCK_ALLOCATED) {
+    return -1;
+  }
+  if (!validate_block_payload(block)) {
     quarantine_block(block, block->block_size);
     return -1;
   }
@@ -496,8 +504,7 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
 
   BlockHeader *block = get_block_ptr_payload(ptr);
 
-  if (!validate_block_metadata(block) ||
-      !within_heap((uint8_t *)block + block->block_size)) {
+  if (!validate_block_metadata(block)) {
     BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
 
     if (corrupted_bounds.size == 0) {
@@ -510,8 +517,10 @@ int mm_write(void *ptr, size_t offset, const void *src, size_t len) {
                        corrupted_bounds.size);
       return -1;
     }
-  } else if (block->flags != BLOCK_ALLOCATED ||
-             !validate_block_payload(block)) {
+  } else if (block->flags != BLOCK_ALLOCATED) {
+    return -1;
+  }
+  if (!validate_block_payload(block)) {
     quarantine_block(block, block->block_size);
     return -1;
   }
@@ -598,6 +607,7 @@ void mm_free(void *ptr) {
     return;
   }
 
+  // Update block metadata
   block->flags = BLOCK_FREE;
   block->payload_size = 0;
   block->payload_checksum = 0;
@@ -610,6 +620,7 @@ void mm_free(void *ptr) {
   data_length = offsetof(BlockFooter, footer_checksum);
   footer->footer_checksum = crc32((const void *)footer, data_length);
 
+  // Coalesce adjacent free blocks
   block = coalesce_blocks(block);
 
   SIZE_T payload_size =
@@ -617,12 +628,57 @@ void mm_free(void *ptr) {
   write_pattern((uint8_t *)block + sizeof(BlockHeader), payload_size);
 }
 
-// Outputs the state of the heap and individual blocks
+void *mm_realloc(void *ptr, size_t new_size) {
+  if (ptr == NULL) {
+    return NULL;
+  }
+
+  BlockHeader *block = get_block_ptr_payload(ptr);
+
+  if (!validate_block_metadata(block)) {
+    BlockBounds corrupted_bounds = find_corrupted_bounds((uint8_t *)block);
+
+    if (corrupted_bounds.size == 0) {
+      return NULL;
+    }
+
+    if (!repair_block((BlockHeader *)corrupted_bounds.start,
+                      corrupted_bounds.size)) {
+      quarantine_block((BlockHeader *)corrupted_bounds.start,
+                       corrupted_bounds.size);
+      return NULL;
+    }
+  } else if (block->flags != BLOCK_ALLOCATED) {
+    return NULL;
+  }
+  if (!validate_block_payload(block)) {
+    quarantine_block(block, block->block_size);
+    return NULL;
+  }
+
+  // Allocate new resized block
+  void *new_ptr = mm_malloc(new_size);
+  BlockHeader *new_block = get_block_ptr_payload(new_ptr);
+
+  // Copy over data from original block
+  memset(new_ptr, 0, new_block->payload_size);
+  memcpy(new_ptr, ptr, new_block->payload_size);
+  new_block->payload_checksum =
+      crc32((const void *)new_ptr, new_block->payload_size);
+  size_t data_length = offsetof(BlockHeader, header_checksum);
+  new_block->header_checksum = crc32((const void *)new_block, data_length);
+
+  // Free original block
+  mm_free(ptr);
+
+  return new_ptr;
+}
+
 void mm_heap_stats(void) {
   printf("Heap Statistics:\n");
-  printf("  Heap Start: %p\n", (void *)s_heap - INITIAL_PADDING);
+  printf("  Heap Start: %p\n", (uint8_t *)s_heap - INITIAL_PADDING);
   printf("  Heap Size: %zu bytes\n", s_heap_size + INITIAL_PADDING);
-  printf("  Initial Padding: %zu bytes\n", INITIAL_PADDING);
+  printf("  Initial Padding: %zu bytes\n", (size_t)INITIAL_PADDING);
   printf("  ALIGN: %u bytes\n", ALIGN);
   printf("  BlockHeader size: %zu bytes\n", sizeof(BlockHeader));
   printf("  BlockFooter size: %zu bytes\n", sizeof(BlockFooter));
@@ -636,6 +692,7 @@ void mm_heap_stats(void) {
   size_t quarantined_bytes = 0;
   size_t corrupted_bytes = 0;
 
+  // Display all blocks within the heap
   while (within_heap((uint8_t *)current_block)) {
     block_count++;
     printf("Block %d at offset %u:\n", block_count,
@@ -654,6 +711,9 @@ void mm_heap_stats(void) {
              corrupted_bounds.start, corrupted_bounds.size);
       current_block = (BlockHeader *)((uint8_t *)corrupted_bounds.start +
                                       corrupted_bounds.size);
+      if (corrupted_bounds.size == 0) {
+        break;
+      }
       continue;
     }
 
